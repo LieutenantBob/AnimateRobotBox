@@ -57,6 +57,7 @@ const partLabel = document.getElementById('part-label');
 const stepLabel = document.getElementById('step-label');
 
 let animator = null;
+let modelRoot = null; // reference to the loaded model for raycasting
 let isPlaying = false;
 let currentTime = 0;
 let totalDuration = 18;
@@ -64,12 +65,8 @@ let speedMultiplier = 1;
 const speeds = [0.25, 0.5, 1, 2, 4];
 let speedIndex = 2;
 
-// --- Model paths ---
-const MODEL_PATHS = [
-  '../../assets/decimated/unfolded/robot_decimated.glb',
-  '../../assets/decimated/folded/robot_decimated.glb',
-];
-
+// Paths relative to src/viewer/ — only the unfolded model is used
+const MODEL_PATH = '../../assets/decimated/unfolded/robot_decimated.glb';
 const SEQUENCE_PATH = '../../config/fold_sequence.json';
 
 // --- Load model and animation config ---
@@ -80,75 +77,69 @@ async function loadModel() {
   let sequence = null;
   try {
     const resp = await fetch(SEQUENCE_PATH);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     sequence = await resp.json();
-    console.log('Loaded fold sequence:', sequence.sequence.length, 'steps');
   } catch (e) {
-    console.warn('Could not load fold_sequence.json:', e);
+    console.warn('Could not load fold_sequence.json:', e.message);
+    progressText.textContent = 'Warning: animation config not found. Model will load without animation.';
   }
 
-  for (const path of MODEL_PATHS) {
-    try {
-      progressText.textContent = `Loading ${path.split('/').pop()}...`;
-      const gltf = await new Promise((resolve, reject) => {
-        loader.load(
-          path,
-          resolve,
-          (event) => {
-            if (event.total > 0) {
-              const pct = Math.round((event.loaded / event.total) * 100);
-              progressFill.style.width = `${pct}%`;
-              progressText.textContent = `Loading... ${pct}%`;
-            }
-          },
-          reject
-        );
-      });
-
-      console.log(`Loaded: ${path}`);
-      scene.add(gltf.scene);
-
-      // Log all mesh names and vertex counts
-      let meshCount = 0;
-      gltf.scene.traverse((node) => {
-        if (node.isMesh) {
-          meshCount++;
-        }
-      });
-      console.log(`  ${meshCount} meshes in scene`);
-
-      // Center camera on model
-      const box = new THREE.Box3().setFromObject(gltf.scene);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      controls.target.copy(center);
-      const maxDim = Math.max(size.x, size.y, size.z);
-      camera.position.set(
-        center.x + maxDim * 1.5,
-        center.y + maxDim * 1.0,
-        center.z + maxDim * 1.5
+  try {
+    progressText.textContent = 'Loading model...';
+    const gltf = await new Promise((resolve, reject) => {
+      loader.load(
+        MODEL_PATH,
+        resolve,
+        (event) => {
+          if (event.total > 0) {
+            const pct = Math.round((event.loaded / event.total) * 100);
+            progressFill.style.width = `${pct}%`;
+            progressText.textContent = `Loading... ${pct}%`;
+          }
+        },
+        reject
       );
-      controls.update();
+    });
 
-      // Set up programmatic animation
-      if (sequence) {
-        animator = createFoldAnimation(gltf.scene, sequence);
-        totalDuration = animator.totalDuration;
-        // Start at time 0 (fully folded = unfolded state, before any animation)
-        animator.update(0);
-      }
+    // Rotate model from Z-up (OBJ/CAD convention) to Y-up (Three.js)
+    gltf.scene.rotation.x = -Math.PI / 2;
+    scene.add(gltf.scene);
+    modelRoot = gltf.scene;
 
-      loadingDiv.classList.add('hidden');
-      controlsDiv.classList.remove('hidden');
-      return;
+    // Center camera on model
+    const box = new THREE.Box3().setFromObject(gltf.scene);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    controls.target.copy(center);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    camera.position.set(
+      center.x + maxDim * 1.5,
+      center.y + maxDim * 1.0,
+      center.z + maxDim * 1.5
+    );
+    controls.update();
 
-    } catch (e) {
-      console.warn(`Failed to load ${path}:`, e.message || e);
+    // Set up programmatic animation
+    if (sequence) {
+      animator = createFoldAnimation(gltf.scene, sequence);
+      totalDuration = animator.totalDuration;
+      animator.update(0);
     }
-  }
 
-  progressText.textContent = 'No model file found. Run the decimation pipeline first.';
-  progressFill.style.width = '100%';
-  progressFill.style.background = '#ff4444';
+    loadingDiv.classList.add('hidden');
+    controlsDiv.classList.remove('hidden');
+
+    if (!animator) {
+      progressText.textContent = '';
+      loadingDiv.classList.add('hidden');
+    }
+
+  } catch (e) {
+    progressText.textContent = 'Failed to load model. Run the decimation pipeline first.';
+    progressFill.style.width = '100%';
+    progressFill.style.background = '#ff4444';
+    console.error('Model load error:', e.message);
+  }
 }
 
 // --- UI Controls ---
@@ -212,16 +203,24 @@ function updateStepLabel(t) {
   stepLabel.style.display = currentStep ? 'block' : 'none';
 }
 
-// --- Raycasting for part identification ---
+// --- Raycasting for part identification (throttled to rAF) ---
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
+let raycastPending = false;
 
 renderer.domElement.addEventListener('mousemove', (event) => {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  raycastPending = true;
+});
+
+function performRaycast() {
+  if (!raycastPending || !modelRoot) return;
+  raycastPending = false;
 
   raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(scene.children, true);
+  // Only intersect model, not grid/lights
+  const intersects = raycaster.intersectObject(modelRoot, true);
 
   if (intersects.length > 0) {
     const hit = intersects[0].object;
@@ -235,7 +234,7 @@ renderer.domElement.addEventListener('mousemove', (event) => {
   } else {
     partLabel.style.display = 'none';
   }
-});
+}
 
 // --- Resize ---
 window.addEventListener('resize', () => {
@@ -249,6 +248,7 @@ const clock = new THREE.Clock();
 
 function animate() {
   requestAnimationFrame(animate);
+  // getDelta() must be called every frame to prevent large spikes after pause
   const delta = clock.getDelta();
 
   if (animator && isPlaying) {
@@ -267,6 +267,7 @@ function animate() {
     }
   }
 
+  performRaycast();
   controls.update();
   renderer.render(scene, camera);
 }

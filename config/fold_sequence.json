@@ -31,7 +31,7 @@
     {
       "step": 3,
       "name": "Deploy Side Struts",
-      "parts": ["Side_left", "Side_right"],
+      "parts": ["Stang_Venstre", "Stang_Hojre", "Stang_bund002", "Plade_Tv"],
       "action": "deploy",
       "start_time": 5.5,
       "duration_seconds": 1.5,
@@ -40,7 +40,7 @@
     {
       "step": 4,
       "name": "Insert Stiffeners",
-      "parts": ["Langsstiver_NH", "Langsstiver_ØV", "Langsstiver_ØH", "Langsstiver_NV_2", "Langsstiver_NV_master002", "Tvarstiver_Vandret_ØV", "Tvarstiver_Vandret_ØH", "Tvarstiver_Vandret_NH"],
+      "parts": ["Langsstiver", "Tvarstiver"],
       "action": "slide_into_position",
       "start_time": 7.0,
       "duration_seconds": 2.0,
@@ -49,7 +49,7 @@
     {
       "step": 5,
       "name": "Flip Open Shelf with TV",
-      "parts": ["Hylde", "TV"],
+      "parts": ["Hylde", "TV", "Body", "SOLID012", "SOLID013", "SOLID014", "SOLID015", "SOLID016"],
       "action": "rotate",
       "direction": "flip_upward",
       "start_time": 9.0,
@@ -87,7 +87,7 @@
     {
       "step": 9,
       "name": "Extend Robot Arm",
-      "parts": ["UR30"],
+      "parts": ["C-2003903", "C-2003904", "C-2003907", "C-2003908", "C-2007307", "C-2007308", "C-2007309", "C-2007310", "C-2007311", "C-2007312", "C-2007588", "704-250-01_filled", "704-251-01_filled", "1005866"],
       "action": "extend_joints",
       "start_time": 15.5,
       "duration_seconds": 2.5,

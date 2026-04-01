@@ -1,24 +1,114 @@
 /**
  * Programmatic fold/unfold animation engine.
- * Drives mesh transforms based on fold_sequence.json config.
- * No Blender needed — all animation computed in Three.js.
+ *
+ * GLB coordinates (preserved from OBJ): X=width, Y=depth, Z=height(up)
+ * Three.js Y-up correction is applied at the model root level in viewer.js.
+ * All animation math here works in the original OBJ Z-up coordinate system.
+ *
+ * t=0: fully folded (closed box). t=totalDuration: fully unfolded.
  */
 import * as THREE from 'three';
 
-// Easing function: smooth ease-in-out
 function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
+const _offset = new THREE.Vector3();
+const _quat = new THREE.Quaternion();
+const _translation = new THREE.Vector3();
+
 /**
- * Build the animation system from a loaded glTF scene and fold sequence config.
+ * Exact fold transforms computed from folded vs unfolded OBJ coordinates.
  *
- * @param {THREE.Group} model - The loaded glTF scene root
- * @param {Object} sequence - The fold_sequence.json data
- * @returns {Object} Animation controller with update(t) method
+ * Each rotates a panel from its flat unfolded position to its vertical
+ * folded position (forming box walls). Verified against actual geometry:
+ *
+ *   Forside2: flat at Y[-1000,0] Z[10,32] → wall at Y~5 Z[32,1032]
+ *   Bag2:     flat at Y[1000,2000] Z[10,32] → wall at Y~995 Z[32,1032]
+ *   Left2:    flat at X[-1000,0] Z[10,32] → wall at X~5 Z[32,1032]
+ *   Right2:   flat at X[1200,2200] Z[10,32] → wall at X~1195 Z[32,1032]
+ *   Top2:     flat at Y[-2003,-1003] → lid at Z[1032,1054]
  */
+const PANEL_FOLDS = {
+  'Forside2': {
+    pivot: [600, 0, 32],
+    axis: [-1, 0, 0],   // negative X rotation
+    angle: Math.PI / 2,
+  },
+  'Bag2': {
+    pivot: [600, 1000, 32],
+    axis: [1, 0, 0],    // positive X rotation
+    angle: Math.PI / 2,
+  },
+  'Left2': {
+    pivot: [0, 500, 32],
+    axis: [0, 1, 0],    // positive Y rotation
+    angle: Math.PI / 2,
+  },
+  'Right2': {
+    pivot: [1200, 500, 32],
+    axis: [0, -1, 0],   // negative Y rotation
+    angle: Math.PI / 2,
+  },
+  'Top2': {
+    // Top2 unfolded: center at [600, -1503, 21]. Folded: center at [600, 500, 1043].
+    // It lies flat beyond the front panel. To fold: rotate it up like the front panel
+    // (pivot at Y=0), then translate to sit on top of the box walls.
+    // Rotation puts its center at roughly [600, -11, 1535] (rotated -90° around X at Y=0,Z=32)
+    // Then translate to [600, 500, 1043]: delta = [0, 511, -492]
+    pivot: [600, 0, 32],
+    axis: [-1, 0, 0],
+    angle: Math.PI / 2,
+    postTranslate: [0, 511, -492],
+  },
+};
+
+// Box interior: X[5,1195] Y[5,995] Z[32,1032]
+const BOX_CENTER = [600, 500, 400];
+
+/**
+ * Exact fold translations for equipment that needs to pack inside the box.
+ * Computed from unfolded positions → box interior center.
+ * Key: step name → per-part translations.
+ */
+const EQUIPMENT_FOLDS = {
+  // Step 3: Side struts deploy outward. Fold = pull them inside.
+  'Deploy Side Struts': {
+    'Stang_Venstre': [999, 145, -194],    // from X=-399 to inside
+    'Stang_Hojre': [-821, 600, -194],     // from X=1421 to inside
+    '_default': [0, 0, 0],
+  },
+  // Step 4: Stiffeners slide into position. Fold = pull inside.
+  'Insert Stiffeners': {
+    '_default_outside': true, // auto-compute for parts outside box
+  },
+  // Step 5: Shelf+TV flip (handled by rotation, not translation)
+  // Step 6: PC moves right. Fold = move left into box.
+  'Move PC to Final Position': {
+    'PC2': [-1396, -180, 142],
+  },
+  // Step 7: Feet deploy. Fold = pack inside box.
+  'Deploy Feet': {
+    'Fodder_Forside': [0, 1000, 470],
+    'Fodder_Top': [0, 2000, 470],
+    'Fodder_Bagside': [0, -1000, 470],
+    'Fodder_venstre': [500, 0, 470],
+    'Fodder_Højre': [-500, 0, 470],
+    '_default': [0, 0, 470],
+  },
+  // Step 8: Keyboard and mouse placed. Fold = pack inside.
+  'Place Keyboard and Mouse': {
+    'keyboard': [619, -906, -500],
+    'Mouse 2': [400, -800, -400],
+    '_default': [400, -800, -400],
+  },
+  // Step 9: Robot arm extends. Fold = retract toward box.
+  'Extend Robot Arm': {
+    '_default_outside': true,
+  },
+};
+
 export function createFoldAnimation(model, sequence) {
-  // Index all meshes by name for fast lookup
   const meshMap = new Map();
   model.traverse((node) => {
     if (node.isMesh || node.isGroup) {
@@ -26,9 +116,6 @@ export function createFoldAnimation(model, sequence) {
     }
   });
 
-  console.log(`Animation: ${meshMap.size} named nodes found`);
-
-  // Store original transforms for each mesh
   const originalTransforms = new Map();
   meshMap.forEach((node, name) => {
     originalTransforms.set(name, {
@@ -38,15 +125,12 @@ export function createFoldAnimation(model, sequence) {
     });
   });
 
-  // Find meshes matching a part name (handles partial matches)
   function findMeshes(partName) {
     const found = [];
-    // Exact match first
     if (meshMap.has(partName)) {
       found.push({ name: partName, mesh: meshMap.get(partName) });
       return found;
     }
-    // Partial/prefix match
     meshMap.forEach((mesh, name) => {
       if (name.startsWith(partName) || name.includes(partName)) {
         found.push({ name, mesh });
@@ -55,21 +139,18 @@ export function createFoldAnimation(model, sequence) {
     return found;
   }
 
-  // Compute the bounding box center and edges for a set of meshes
-  function computeBounds(meshes) {
+  function getGeometryCenter(meshes) {
     const box = new THREE.Box3();
     for (const { mesh } of meshes) {
-      box.expandByObject(mesh);
+      if (mesh.geometry) {
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        if (mesh.geometry.boundingBox) box.union(mesh.geometry.boundingBox);
+      }
     }
-    return {
-      center: box.getCenter(new THREE.Vector3()),
-      min: box.min.clone(),
-      max: box.max.clone(),
-      size: box.getSize(new THREE.Vector3()),
-    };
+    return box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
   }
 
-  // Pre-compute pivot points and rotation axes for each animation step
+  // Build steps
   const steps = sequence.sequence.map((step) => {
     const allMeshes = [];
     for (const partName of step.parts) {
@@ -77,161 +158,159 @@ export function createFoldAnimation(model, sequence) {
     }
 
     if (allMeshes.length === 0) {
-      console.warn(`Animation step "${step.name}": no meshes found for`, step.parts);
-    } else {
-      console.log(`Animation step "${step.name}": ${allMeshes.length} meshes`);
+      console.warn(`Step "${step.name}": no meshes found for`, step.parts);
     }
 
-    // Determine pivot point and rotation axis based on hinge_edge
-    let pivot = new THREE.Vector3();
-    let axis = new THREE.Vector3(1, 0, 0); // default X-axis
-    let angle = 0;
-    let translation = null;
+    // Per-mesh fold transforms
+    const meshFolds = new Map();
 
-    if (allMeshes.length > 0) {
-      const bounds = computeBounds(allMeshes);
-
-      if (step.action === 'rotate') {
-        angle = THREE.MathUtils.degToRad(step.angle_degrees || 90);
-
-        // OBJ coordinate system: X=width, Y=depth, Z=height
-        // Determine pivot based on hinge_edge
-        switch (step.hinge_edge) {
-          case 'front':
-            // Hinge at the front edge (min Y), rotate around X axis
-            pivot.set(bounds.center.x, bounds.min.y, bounds.center.z);
-            axis.set(1, 0, 0);
-            break;
-          case 'back':
-            // Hinge at the back edge (max Y)
-            pivot.set(bounds.center.x, bounds.max.y, bounds.center.z);
-            axis.set(-1, 0, 0);
-            break;
-          case 'bottom':
-            // Hinge at the bottom edge (min Z), rotate around appropriate axis
-            // For side panels, each has a different hinge direction
-            pivot.set(bounds.center.x, bounds.center.y, bounds.min.z);
-            axis.set(1, 0, 0);
-            break;
-          case 'left':
-            pivot.set(bounds.min.x, bounds.center.y, bounds.center.z);
-            axis.set(0, 1, 0);
-            break;
-          case 'right':
-            pivot.set(bounds.max.x, bounds.center.y, bounds.center.z);
-            axis.set(0, -1, 0);
-            break;
-          case 'top':
-            pivot.set(bounds.center.x, bounds.center.y, bounds.max.z);
-            axis.set(1, 0, 0);
-            angle = -angle;
-            break;
-          default:
-            pivot.copy(bounds.center);
+    // Panel rotation steps
+    if (step.action === 'rotate' && (step.hinge_edge === 'bottom' || step.hinge_edge === 'front')) {
+      for (const partName of step.parts) {
+        const fold = PANEL_FOLDS[partName];
+        if (!fold) continue;
+        const meshes = findMeshes(partName);
+        for (const m of meshes) {
+          meshFolds.set(m.name, {
+            pivot: new THREE.Vector3(...fold.pivot),
+            axis: new THREE.Vector3(...fold.axis).normalize(),
+            angle: fold.angle,
+            postTranslate: fold.postTranslate ? new THREE.Vector3(...fold.postTranslate) : null,
+          });
         }
-      } else if (step.action === 'translate' || step.action === 'move_to_position' || step.action === 'slide_into_position') {
-        // Translation: move parts outward from center
-        const bounds = computeBounds(allMeshes);
-        const dir = step.direction || 'up';
-        const distance = bounds.size.length() * 0.5;
+      }
+    }
 
-        switch (dir) {
-          case 'right': translation = new THREE.Vector3(distance, 0, 0); break;
-          case 'left': translation = new THREE.Vector3(-distance, 0, 0); break;
-          case 'up': translation = new THREE.Vector3(0, 0, distance); break;
-          case 'down': translation = new THREE.Vector3(0, 0, -distance); break;
-          case 'forward': translation = new THREE.Vector3(0, -distance, 0); break;
-          case 'backward': translation = new THREE.Vector3(0, distance, 0); break;
-          case 'flip_upward':
-            // For the shelf+TV flip: rotate upward
-            pivot.set(bounds.center.x, bounds.min.y, bounds.min.z);
-            axis.set(1, 0, 0);
-            angle = THREE.MathUtils.degToRad(-90);
-            break;
-          default: translation = new THREE.Vector3(0, 0, distance);
+    // Shelf+TV flip
+    if (step.action === 'rotate' && step.direction === 'flip_upward') {
+      for (const m of allMeshes) {
+        // TV center at [631, 2472, 1244], Body at [653, 2541, 580], Hylde at [137, 1372, 532]
+        // These need to fold flat and pack inside the box.
+        // Rotate down (fold flat), then translate into box interior.
+        const center = getGeometryCenter([m]);
+        meshFolds.set(m.name, {
+          pivot: new THREE.Vector3(center.x, center.y, 32),
+          axis: new THREE.Vector3(1, 0, 0),
+          angle: Math.PI / 4, // partial fold
+          // Also translate toward box center
+          postTranslate: new THREE.Vector3(
+            BOX_CENTER[0] - center.x,
+            BOX_CENTER[1] - center.y,
+            BOX_CENTER[2] - center.z
+          ).multiplyScalar(0.85),
+        });
+      }
+    }
+
+    // Translation-based folds: move equipment toward box center
+    // Use precise per-part translations from EQUIPMENT_FOLDS if available
+    const perMeshTranslations = new Map();
+    const equipFold = EQUIPMENT_FOLDS[step.name];
+
+    if (!meshFolds.size && allMeshes.length > 0 &&
+        (step.action !== 'rotate' || !step.hinge_edge)) {
+      for (const { mesh, name: meshName } of allMeshes) {
+        let trans = null;
+
+        if (equipFold) {
+          // Check for exact part name match
+          if (equipFold[meshName]) {
+            trans = new THREE.Vector3(...equipFold[meshName]);
+          } else if (equipFold['_default_outside']) {
+            // Auto-compute: move part center to box center
+            const center = getGeometryCenter([{ mesh, name: meshName }]);
+            const boxCenter = new THREE.Vector3(...BOX_CENTER);
+            trans = boxCenter.clone().sub(center).multiplyScalar(0.9);
+          } else if (equipFold['_default']) {
+            trans = new THREE.Vector3(...equipFold['_default']);
+          }
         }
-      } else if (step.action === 'extend_joints') {
-        // Robot arm: slight upward translation to simulate extending
-        translation = new THREE.Vector3(0, 0, 100);
-      } else if (step.action === 'deploy') {
-        // Struts: translate outward
-        const bounds = computeBounds(allMeshes);
-        translation = new THREE.Vector3(0, 0, -bounds.size.z * 0.3);
+
+        if (!trans) {
+          // Fallback: compute from geometry
+          const center = getGeometryCenter([{ mesh, name: meshName }]);
+          const boxCenter = new THREE.Vector3(...BOX_CENTER);
+          trans = boxCenter.clone().sub(center).multiplyScalar(0.9);
+        }
+
+        perMeshTranslations.set(meshName, trans);
       }
     }
 
     return {
       ...step,
       meshes: allMeshes,
-      pivot,
-      axis: axis.normalize(),
-      angle,
-      translation,
+      meshFolds,
+      perMeshTranslations,
       startTime: step.start_time,
-      duration: step.duration_seconds,
+      duration: Math.max(0.001, step.duration_seconds || 1),
     };
   });
 
   const totalDuration = sequence.total_duration_seconds || 18;
 
-  /**
-   * Update animation to time t (0 = fully folded, totalDuration = fully unfolded).
-   */
   function update(t) {
-    // Reset all meshes to original transforms first
+    // Reset to original unfolded positions
     originalTransforms.forEach((orig, name) => {
       const mesh = meshMap.get(name);
       if (mesh) {
         mesh.position.copy(orig.position);
         mesh.quaternion.copy(orig.quaternion);
+        mesh.scale.copy(orig.scale);
       }
     });
 
-    // Apply each animation step
+    // Apply fold transforms
     for (const step of steps) {
       if (step.meshes.length === 0) continue;
 
-      // Compute progress for this step (0 to 1)
-      let progress = 0;
+      // foldAmount: 1=fully folded (t=0), 0=fully unfolded (t=end)
+      let foldAmount = 1;
       if (t >= step.startTime + step.duration) {
-        progress = 1;
+        foldAmount = 0;
       } else if (t > step.startTime) {
-        progress = (t - step.startTime) / step.duration;
-        progress = easeInOutCubic(progress);
+        foldAmount = 1 - easeInOutCubic((t - step.startTime) / step.duration);
       }
+      if (foldAmount <= 0) continue;
 
-      if (progress <= 0) continue;
+      // Per-mesh rotations (panels, shelf/TV)
+      if (step.meshFolds.size > 0) {
+        for (const { mesh, name } of step.meshes) {
+          const fold = step.meshFolds.get(name);
+          if (!fold) continue;
 
-      // Apply rotation around pivot
-      if (step.angle !== 0) {
-        const currentAngle = step.angle * progress;
-        for (const { mesh } of step.meshes) {
-          // Rotate around pivot point
-          const offset = mesh.position.clone().sub(step.pivot);
-          const quat = new THREE.Quaternion().setFromAxisAngle(step.axis, currentAngle);
-          offset.applyQuaternion(quat);
-          mesh.position.copy(step.pivot).add(offset);
+          const angle = fold.angle * foldAmount;
+          _quat.setFromAxisAngle(fold.axis, angle);
 
-          // Apply rotation to the mesh itself
-          const meshQuat = new THREE.Quaternion().setFromAxisAngle(step.axis, currentAngle);
-          mesh.quaternion.premultiply(meshQuat);
+          _offset.copy(mesh.position).sub(fold.pivot);
+          _offset.applyQuaternion(_quat);
+          mesh.position.copy(fold.pivot).add(_offset);
+
+          const orig = originalTransforms.get(name);
+          if (orig) {
+            mesh.quaternion.copy(orig.quaternion).premultiply(_quat);
+          }
+
+          if (fold.postTranslate) {
+            _translation.copy(fold.postTranslate).multiplyScalar(foldAmount);
+            mesh.position.add(_translation);
+          }
         }
+        continue;
       }
 
-      // Apply translation
-      if (step.translation) {
-        const currentTranslation = step.translation.clone().multiplyScalar(progress);
-        for (const { mesh } of step.meshes) {
-          mesh.position.add(currentTranslation);
+      // Per-mesh translations (equipment packing)
+      if (step.perMeshTranslations.size > 0) {
+        for (const { mesh, name } of step.meshes) {
+          const trans = step.perMeshTranslations.get(name);
+          if (trans) {
+            _translation.copy(trans).multiplyScalar(foldAmount);
+            mesh.position.add(_translation);
+          }
         }
       }
     }
   }
 
-  return {
-    update,
-    totalDuration,
-    steps,
-    meshMap,
-  };
+  return { update, totalDuration, steps, meshMap };
 }

@@ -1,16 +1,25 @@
 """Parse OBJ files to extract group names, vertex counts, and bounding boxes."""
 
-import re
 import json
+import logging
+import os
 import sys
-from pathlib import Path
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+log = logging.getLogger(__name__)
+
+
+def _parse_vertex_index(raw_str: str, vertex_count: int) -> int:
+    """Parse an OBJ vertex index, handling negative (relative) indices."""
+    raw = int(raw_str.split('/')[0])
+    return raw - 1 if raw > 0 else vertex_count + raw
 
 
 @dataclass
 class GroupInfo:
     name: str
-    vertex_indices: list[int] = field(default_factory=list)
+    vertex_indices: set[int] = field(default_factory=set)
     face_count: int = 0
     bbox_min: list[float] = field(default_factory=lambda: [float('inf')] * 3)
     bbox_max: list[float] = field(default_factory=lambda: [float('-inf')] * 3)
@@ -18,7 +27,7 @@ class GroupInfo:
 
 def parse_obj(filepath: str) -> dict:
     """Parse an OBJ file and return group-level statistics."""
-    vertices = []
+    vertices: list[list[float]] = []
     groups: dict[str, GroupInfo] = {}
     current_group = "default"
 
@@ -48,9 +57,8 @@ def parse_obj(filepath: str) -> dict:
                 group.face_count += 1
 
                 for vert_ref in parts[1:]:
-                    vi = int(vert_ref.split('/')[0]) - 1  # OBJ is 1-indexed
-                    if vi not in group.vertex_indices:
-                        group.vertex_indices.append(vi)
+                    vi = _parse_vertex_index(vert_ref, len(vertices))
+                    group.vertex_indices.add(vi)
 
     # Compute bounding boxes from vertex indices
     for group in groups.values():
@@ -87,43 +95,51 @@ def parse_obj(filepath: str) -> dict:
 
 
 def parse_obj_streaming(filepath: str) -> dict:
-    """Parse a large OBJ file using streaming to avoid memory issues with vertex indices.
+    """Parse a large OBJ file with streaming bbox computation.
 
-    Instead of tracking individual vertex indices per group, tracks vertex index ranges.
+    Two-pass approach: first pass reads vertices into a list, second pass
+    processes faces and accumulates bounding boxes per group using the
+    vertex coordinates directly — no per-group vertex index sets needed.
     """
-    total_vertices = 0
-    total_faces = 0
-    groups: dict[str, dict] = {}
-    current_group = "default"
-    vertices_buffer = []  # Keep all vertices for bbox computation
-
-    print(f"Streaming parse of {filepath}...")
+    log.info("Streaming parse of %s...", filepath)
     line_count = 0
+
+    # First pass: read all vertices into a flat list
+    vertices: list[list[float]] = []
+    group_starts: list[tuple[int, str]] = []  # (line_number, group_name)
 
     with open(filepath, 'r', errors='replace') as f:
         for line in f:
             line_count += 1
-            if line_count % 1_000_000 == 0:
-                print(f"  ...processed {line_count:,} lines")
+            if line_count % 2_000_000 == 0:
+                log.info("  Pass 1: %s lines...", f"{line_count:,}")
 
+            stripped = line.strip()
+            if stripped.startswith('v '):
+                parts = stripped.split()
+                if len(parts) >= 4:
+                    vertices.append([float(parts[1]), float(parts[2]), float(parts[3])])
+
+    log.info("  Pass 1 done: %s vertices", f"{len(vertices):,}")
+
+    # Second pass: process groups and faces, accumulate bbox per group
+    groups: dict[str, dict] = {}
+    current_group = "default"
+    total_faces = 0
+
+    with open(filepath, 'r', errors='replace') as f:
+        for line in f:
             stripped = line.strip()
             if not stripped or stripped.startswith('#'):
                 continue
 
-            if stripped.startswith('v '):
-                parts = stripped.split()
-                if len(parts) >= 4:
-                    coords = [float(parts[1]), float(parts[2]), float(parts[3])]
-                    vertices_buffer.append(coords)
-                    total_vertices += 1
-
-            elif stripped.startswith('g '):
+            if stripped.startswith('g '):
                 current_group = stripped[2:].strip()
                 if current_group not in groups:
                     groups[current_group] = {
                         "name": current_group,
                         "face_count": 0,
-                        "vertex_indices_set": set(),
+                        "vertex_count_set": set(),
                         "bbox_min": [float('inf')] * 3,
                         "bbox_max": [float('-inf')] * 3,
                     }
@@ -133,7 +149,7 @@ def parse_obj_streaming(filepath: str) -> dict:
                     groups[current_group] = {
                         "name": current_group,
                         "face_count": 0,
-                        "vertex_indices_set": set(),
+                        "vertex_count_set": set(),
                         "bbox_min": [float('inf')] * 3,
                         "bbox_max": [float('-inf')] * 3,
                     }
@@ -143,31 +159,31 @@ def parse_obj_streaming(filepath: str) -> dict:
 
                 parts = stripped.split()
                 for vert_ref in parts[1:]:
-                    vi = int(vert_ref.split('/')[0]) - 1
-                    group["vertex_indices_set"].add(vi)
+                    vi = _parse_vertex_index(vert_ref, len(vertices))
+                    if vi not in group["vertex_count_set"]:
+                        group["vertex_count_set"].add(vi)
+                        # Accumulate bbox inline
+                        if 0 <= vi < len(vertices):
+                            coord = vertices[vi]
+                            for axis in range(3):
+                                if coord[axis] < group["bbox_min"][axis]:
+                                    group["bbox_min"][axis] = coord[axis]
+                                if coord[axis] > group["bbox_max"][axis]:
+                                    group["bbox_max"][axis] = coord[axis]
 
-    print(f"  Total: {total_vertices:,} vertices, {total_faces:,} faces, {len(groups)} groups")
-    print("  Computing bounding boxes...")
-
-    # Compute bounding boxes
-    for group in groups.values():
-        for vi in group["vertex_indices_set"]:
-            if 0 <= vi < len(vertices_buffer):
-                for axis in range(3):
-                    group["bbox_min"][axis] = min(group["bbox_min"][axis], vertices_buffer[vi][axis])
-                    group["bbox_max"][axis] = max(group["bbox_max"][axis], vertices_buffer[vi][axis])
+    log.info("  Pass 2 done: %s faces, %d groups", f"{total_faces:,}", len(groups))
 
     # Build result
     result = {
         "file": str(filepath),
-        "total_vertices": total_vertices,
+        "total_vertices": len(vertices),
         "total_faces": total_faces,
         "total_groups": len(groups),
         "groups": []
     }
 
     for name, group in sorted(groups.items()):
-        vc = len(group["vertex_indices_set"])
+        vc = len(group["vertex_count_set"])
         dims = [
             round(group["bbox_max"][i] - group["bbox_min"][i], 2)
             for i in range(3)
@@ -193,8 +209,6 @@ if __name__ == "__main__":
     filepath = sys.argv[1]
     output = sys.argv[2] if len(sys.argv) > 2 else None
 
-    # Use streaming parser for large files
-    import os
     size_mb = os.path.getsize(filepath) / (1024 * 1024)
     if size_mb > 10:
         result = parse_obj_streaming(filepath)
@@ -204,6 +218,6 @@ if __name__ == "__main__":
     if output:
         with open(output, 'w') as f:
             json.dump(result, f, indent=2)
-        print(f"Saved to {output}")
+        log.info("Saved to %s", output)
     else:
         print(json.dumps(result, indent=2))

@@ -1,14 +1,26 @@
 """Decimate unfolded OBJ mesh per-group for web-friendly vertex counts.
 
-Uses trimesh for loading and simplification.
-Falls back to basic vertex reduction if quadric decimation is unavailable.
+Uses fast_simplification for quadric decimation with trimesh fallback.
 """
 
 import json
-import sys
+import logging
 import os
+import sys
+
 import numpy as np
-from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+log = logging.getLogger(__name__)
+
+# Cable part number prefixes — extracted as constants for maintainability
+CABLE_PART_PREFIXES = ('1005703', '1005866')
+
+
+def _parse_vertex_index(raw_str: str, vertex_count: int) -> int:
+    """Parse an OBJ vertex index, handling negative (relative) indices."""
+    raw = int(raw_str.split('/')[0])
+    return raw - 1 if raw > 0 else vertex_count + raw
 
 
 def load_obj_groups(filepath: str) -> dict:
@@ -18,10 +30,9 @@ def load_obj_groups(filepath: str) -> dict:
     """
     import trimesh
 
-    print(f"Loading OBJ with group splitting: {filepath}")
+    log.info("Loading OBJ with group splitting: %s", filepath)
 
-    # Parse the OBJ manually to extract group boundaries
-    vertices = []
+    vertices: list[list[float]] = []
     groups: dict[str, list[list[int]]] = {}
     current_group = "default"
 
@@ -43,36 +54,35 @@ def load_obj_groups(filepath: str) -> dict:
                     groups[current_group] = []
                 face_verts = []
                 for part in stripped.split()[1:]:
-                    vi = int(part.split('/')[0]) - 1  # OBJ is 1-indexed
+                    vi = _parse_vertex_index(part, len(vertices))
                     face_verts.append(vi)
                 # Triangulate quads and polygons
                 for i in range(1, len(face_verts) - 1):
                     groups[current_group].append([face_verts[0], face_verts[i], face_verts[i + 1]])
 
     all_vertices = np.array(vertices, dtype=np.float64)
-    print(f"  Parsed {len(all_vertices)} vertices, {len(groups)} groups")
+    log.info("  Parsed %s vertices, %d groups", f"{len(all_vertices):,}", len(groups))
 
     # Build per-group meshes with re-indexed vertices
-    meshes = {}
+    meshes: dict[str, trimesh.Trimesh] = {}
     for name, faces in groups.items():
         if not faces:
             continue
         face_array = np.array(faces, dtype=np.int64)
-        # Get unique vertex indices used by this group
         unique_verts = np.unique(face_array.flatten())
-        # Create vertex remapping
+        # Use __getitem__ to raise KeyError on missing keys instead of silent None
         vert_map = {old: new for new, old in enumerate(unique_verts)}
         new_verts = all_vertices[unique_verts]
-        new_faces = np.vectorize(vert_map.get)(face_array)
+        new_faces = np.vectorize(vert_map.__getitem__)(face_array)
 
         try:
             mesh = trimesh.Trimesh(vertices=new_verts, faces=new_faces, process=False)
             if len(mesh.vertices) > 0:
                 meshes[name] = mesh
         except Exception as e:
-            print(f"    Warning: failed to create mesh for {name}: {e}")
+            log.warning("Failed to create mesh for %s: %s", name, e)
 
-    print(f"  Created {len(meshes)} mesh groups")
+    log.info("  Created %d mesh groups", len(meshes))
     return meshes
 
 
@@ -81,38 +91,47 @@ def decimate_mesh(mesh, target_faces: int, name: str = ""):
     import trimesh
 
     if len(mesh.faces) <= target_faces:
-        print(f"    {name}: {len(mesh.faces)} faces <= target {target_faces}, keeping as-is")
+        log.info("    %s: %d faces <= target %d, keeping as-is", name, len(mesh.faces), target_faces)
         return mesh
 
-    # Try fast_simplification directly (more reliable than trimesh wrapper)
+    # Validate target is achievable
+    if target_faces < 4:
+        target_faces = 4
+
+    # Try fast_simplification directly
     try:
         import fast_simplification
-        target_ratio = max(0.001, min(0.999, 1.0 - (target_faces / len(mesh.faces))))
+        target_ratio = 1.0 - (target_faces / len(mesh.faces))
+        # Clamp to valid range for fast_simplification
+        target_ratio = max(0.01, min(0.99, target_ratio))
         verts_out, faces_out = fast_simplification.simplify(
             mesh.vertices.astype(np.float32),
             mesh.faces.astype(np.int32),
             target_reduction=target_ratio,
         )
         decimated = trimesh.Trimesh(vertices=verts_out, faces=faces_out, process=False)
-        print(f"    {name}: {len(mesh.faces):,} -> {len(decimated.faces):,} faces "
-              f"({len(mesh.vertices):,} -> {len(decimated.vertices):,} verts)")
+        log.info("    %s: %s -> %s faces (%s -> %s verts)",
+                 name, f"{len(mesh.faces):,}", f"{len(decimated.faces):,}",
+                 f"{len(mesh.vertices):,}", f"{len(decimated.vertices):,}")
         return decimated
     except Exception as e:
-        pass
+        log.warning("    %s: fast_simplification failed (%s), trying trimesh fallback", name, e)
 
     # Fallback: trimesh's built-in
     try:
         decimated = mesh.simplify_quadric_decimation(target_faces)
-        print(f"    {name}: {len(mesh.faces):,} -> {len(decimated.faces):,} faces (trimesh)")
+        log.info("    %s: %s -> %s faces (trimesh fallback)",
+                 name, f"{len(mesh.faces):,}", f"{len(decimated.faces):,}")
         return decimated
     except Exception as e:
-        print(f"    {name}: decimation failed ({e}), keeping original ({len(mesh.vertices):,} verts)")
+        log.warning("    %s: all decimation failed (%s), keeping original (%s verts)",
+                    name, e, f"{len(mesh.vertices):,}")
         return mesh
 
 
 def categorize_group(name: str, vertex_count: int) -> str:
     """Categorize a group for decimation target selection."""
-    if '1005703' in name or '1005866' in name:
+    if any(prefix in name for prefix in CABLE_PART_PREFIXES):
         return 'cable'
     elif vertex_count > 50000:
         return 'hero'
@@ -138,12 +157,12 @@ def compute_target_faces(vertex_count: int, face_count: int, category: str, conf
     target_v = int(vertex_count * ratio)
     target_v = max(min_v, min(max_v, target_v))
 
-    # Approximate: faces ≈ 2 * vertices for triangle meshes
+    # Approximate: faces ~ 2 * vertices for triangle meshes
     target_f = target_v * 2
     return max(12, min(target_f, face_count))
 
 
-def decimate_obj(input_path: str, output_dir: str, config_path: str = None):
+def decimate_obj(input_path: str, output_dir: str, config_path: str | None = None):
     """Decimate all groups in an OBJ file and save results."""
     import trimesh
 
@@ -157,17 +176,23 @@ def decimate_obj(input_path: str, output_dir: str, config_path: str = None):
             'hero': {'target_ratio': 0.02, 'min_vertices': 2000, 'max_vertices': 20000},
             'medium': {'target_ratio': 0.1, 'min_vertices': 500, 'max_vertices': 5000},
             'small': {'target_ratio': 0.3, 'min_vertices': 50, 'max_vertices': 2000},
-            'cable_merge': {'target_ratio': 0.05, 'min_vertices': 4, 'max_vertices': 200},
+            'cable': {'target_ratio': 0.05, 'min_vertices': 4, 'max_vertices': 200},
             'tiny': {'keep_as_is': True},
         }
 
+    # Normalize config: treat cable_merge as cable
+    if 'cable_merge' in dec_config and 'cable' not in dec_config:
+        dec_config['cable'] = dec_config['cable_merge']
+    # Ensure cable config has the right keys
+    if 'cable' in dec_config and 'target_ratio' not in dec_config['cable']:
+        dec_config['cable'] = {'target_ratio': 0.05, 'min_vertices': 4, 'max_vertices': 200}
+
     os.makedirs(output_dir, exist_ok=True)
 
-    # Load meshes
     meshes = load_obj_groups(input_path)
     if not meshes:
-        print("ERROR: No meshes loaded!")
-        return
+        log.error("No meshes loaded!")
+        return None
 
     results = {
         'input': input_path,
@@ -177,16 +202,13 @@ def decimate_obj(input_path: str, output_dir: str, config_path: str = None):
                    'original_faces': 0, 'decimated_faces': 0}
     }
 
-    decimated_meshes = {}
+    decimated_meshes: dict[str, trimesh.Trimesh] = {}
 
     for name, mesh in sorted(meshes.items()):
         vc = len(mesh.vertices)
         fc = len(mesh.faces)
         category = categorize_group(name, vc)
-
-        # Use cable_merge config for cables
-        cfg_key = 'cable_merge' if category == 'cable' else category
-        target_f = compute_target_faces(vc, fc, cfg_key, dec_config)
+        target_f = compute_target_faces(vc, fc, category, dec_config)
 
         decimated = decimate_mesh(mesh, target_f, name)
         decimated_meshes[name] = decimated
@@ -213,34 +235,40 @@ def decimate_obj(input_path: str, output_dir: str, config_path: str = None):
         for name, mesh in decimated_meshes.items():
             scene.add_geometry(mesh, node_name=name, geom_name=name)
         scene.export(combined_path)
-        print(f"\nSaved combined GLB: {combined_path}")
         file_size_mb = os.path.getsize(combined_path) / (1024 * 1024)
         results['output_file'] = combined_path
         results['output_size_mb'] = round(file_size_mb, 2)
+        log.info("Saved combined GLB: %s (%.1f MB)", combined_path, file_size_mb)
     except Exception as e:
-        print(f"\nFailed to save combined GLB: {e}")
+        log.error("Failed to save combined GLB: %s", e)
         # Save individual OBJ files as fallback
+        failed_count = 0
         for name, mesh in decimated_meshes.items():
             safe_name = name.replace(' ', '_').replace('/', '_')
             mesh_path = os.path.join(output_dir, f"{safe_name}.obj")
             try:
                 mesh.export(mesh_path)
-            except Exception:
-                pass
+            except Exception as export_err:
+                failed_count += 1
+                log.warning("Failed to export %s: %s", name, export_err)
+        if failed_count:
+            log.warning("%d individual mesh exports failed", failed_count)
 
     # Save report
     report_path = os.path.join(output_dir, "decimation_report.json")
     with open(report_path, 'w') as f:
         json.dump(results, f, indent=2)
-    print(f"Saved report: {report_path}")
+    log.info("Saved report: %s", report_path)
 
     # Print summary
     t = results['totals']
-    print(f"\n=== DECIMATION SUMMARY ===")
-    print(f"  Original:  {t['original_vertices']:>10,} vertices, {t['original_faces']:>10,} faces")
-    print(f"  Decimated: {t['decimated_vertices']:>10,} vertices, {t['decimated_faces']:>10,} faces")
+    log.info("=== DECIMATION SUMMARY ===")
+    log.info("  Original:  %10s vertices, %10s faces",
+             f"{t['original_vertices']:,}", f"{t['original_faces']:,}")
+    log.info("  Decimated: %10s vertices, %10s faces",
+             f"{t['decimated_vertices']:,}", f"{t['decimated_faces']:,}")
     pct = round(100 * (1 - t['decimated_vertices'] / max(1, t['original_vertices'])), 1)
-    print(f"  Reduction: {pct}%")
+    log.info("  Reduction: %s%%", pct)
 
     return results
 
