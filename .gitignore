@@ -25,3 +25,11 @@ __pycache__/
 *.tmp
 *.bak
 *.swp
+
+# Generated assets (rebuild from source)
+assets/decimated/
+assets/textured/
+assets/output/
+
+# Parsed data (regenerate with pipeline)
+assets/*.json

@@ -1,0 +1,106 @@
+{
+  "description": "Robot-in-a-Box unfold animation sequence",
+  "total_duration_seconds": 18,
+  "style": "smooth_presentation",
+  "user_scrubber": true,
+  "sequence": [
+    {
+      "step": 1,
+      "name": "Open Lid",
+      "parts": ["Top2"],
+      "action": "rotate",
+      "hinge_edge": "front",
+      "angle_degrees": 180,
+      "direction": "forward_and_over",
+      "start_time": 0.0,
+      "duration_seconds": 2.5,
+      "notes": "Lid hinges at front edge, swings open toward viewer and over"
+    },
+    {
+      "step": 2,
+      "name": "Fold Down All Side Panels",
+      "parts": ["Forside2", "Bag2", "Left2", "Right2"],
+      "action": "rotate",
+      "hinge_edge": "bottom",
+      "angle_degrees": 180,
+      "direction": "outward_flat",
+      "start_time": 2.5,
+      "duration_seconds": 3.0,
+      "notes": "All 4 panels fold simultaneously, hinge at bottom edge, fold outward to lay flat. Panels are connected like a cardboard box with fold lines. Tripods are attached to panels and deploy with them."
+    },
+    {
+      "step": 3,
+      "name": "Deploy Side Struts",
+      "parts": ["Side_left", "Side_right"],
+      "action": "deploy",
+      "start_time": 5.5,
+      "duration_seconds": 1.5,
+      "notes": "Struts extend to hold panels in open/flat position"
+    },
+    {
+      "step": 4,
+      "name": "Insert Stiffeners",
+      "parts": ["Langsstiver_NH", "Langsstiver_ØV", "Langsstiver_ØH", "Langsstiver_NV_2", "Langsstiver_NV_master002", "Tvarstiver_Vandret_ØV", "Tvarstiver_Vandret_ØH", "Tvarstiver_Vandret_NH"],
+      "action": "slide_into_position",
+      "start_time": 7.0,
+      "duration_seconds": 2.0,
+      "notes": "8 bracing stiffeners slide into slots - separate pieces inserted into position"
+    },
+    {
+      "step": 5,
+      "name": "Flip Open Shelf with TV",
+      "parts": ["Hylde", "TV"],
+      "action": "rotate",
+      "direction": "flip_upward",
+      "start_time": 9.0,
+      "duration_seconds": 2.0,
+      "notes": "Shelf (Hylde) is hinged inside the box and flips upward, carrying the TV with it"
+    },
+    {
+      "step": 6,
+      "name": "Move PC to Final Position",
+      "parts": ["PC2"],
+      "action": "translate",
+      "direction": "right",
+      "start_time": 11.0,
+      "duration_seconds": 1.5,
+      "notes": "PC slides/moves to its final position on the right side"
+    },
+    {
+      "step": 7,
+      "name": "Deploy Feet",
+      "parts": ["Fodder_Forside", "Fodder_Top", "Fodder_Bagside", "Fodder_venstre", "Fodder_Højre"],
+      "action": "move_to_position",
+      "start_time": 12.5,
+      "duration_seconds": 1.5,
+      "notes": "5 feet stored inside the box move to their final positions"
+    },
+    {
+      "step": 8,
+      "name": "Place Keyboard and Mouse",
+      "parts": ["keyboard", "Mouse 2"],
+      "action": "translate",
+      "start_time": 14.0,
+      "duration_seconds": 1.5,
+      "notes": "Keyboard and mouse move out from inside the box and are placed in their working positions"
+    },
+    {
+      "step": 9,
+      "name": "Extend Robot Arm",
+      "parts": ["UR30"],
+      "action": "extend_joints",
+      "start_time": 15.5,
+      "duration_seconds": 2.5,
+      "notes": "Robot arm is already upright inside the box - extends its joints to working position"
+    }
+  ],
+  "static_parts": {
+    "base_never_moves": ["Palle", "Jernplade", "Sandwich_plade"],
+    "skip_animation": ["Clamps", "Handles"],
+    "attached_to_panels": ["Tripod"]
+  },
+  "colors": {
+    "source": "step_file",
+    "enhancements": "Add PBR properties (metallic, roughness) to STEP colors for realistic rendering"
+  }
+}

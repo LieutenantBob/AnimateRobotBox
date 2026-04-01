@@ -1,0 +1,153 @@
+{
+  "description": "PBR material definitions based on STEP colors with enhanced properties",
+  "materials": {
+    "robot_arm_blue": {
+      "baseColor": [0.792, 0.820, 0.933],
+      "metallic": 0.1,
+      "roughness": 0.4,
+      "applies_to": ["C-2003903", "C-2003904", "C-2003907", "C-2003908", "C-2007307", "C-2007308", "C-2007309", "C-2007310", "C-2007311", "C-2007312", "C-2007588"],
+      "notes": "UR30 robot arm segments - light blue-gray from STEP"
+    },
+    "robot_arm_joint": {
+      "baseColor": [0.529, 0.549, 0.549],
+      "metallic": 0.8,
+      "roughness": 0.3,
+      "applies_to": ["704-251-01_filled", "704-250-01_filled", "1005866"],
+      "notes": "Robot arm joints and connectors - metallic gray"
+    },
+    "panel_light": {
+      "baseColor": [0.800, 0.800, 0.902],
+      "metallic": 0.0,
+      "roughness": 0.5,
+      "applies_to": ["Forside2", "Bag2", "Left2", "Right2", "Top2", "Sider", "Top"],
+      "notes": "Box panels - light blue-gray painted metal"
+    },
+    "base_steel": {
+      "baseColor": [0.749, 0.749, 0.749],
+      "metallic": 0.9,
+      "roughness": 0.3,
+      "applies_to": ["Jernplade"],
+      "notes": "Iron plate - polished steel"
+    },
+    "sandwich_plate": {
+      "baseColor": [1.000, 0.949, 0.910],
+      "metallic": 0.0,
+      "roughness": 0.6,
+      "applies_to": ["Sandwich_plade"],
+      "notes": "Sandwich plate - warm off-white"
+    },
+    "pallet_wood": {
+      "baseColor": [0.898, 0.729, 0.392],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "applies_to": ["Palle"],
+      "notes": "Wooden pallet - warm brown from STEP color #24"
+    },
+    "dark_metal": {
+      "baseColor": [0.098, 0.098, 0.098],
+      "metallic": 0.7,
+      "roughness": 0.4,
+      "applies_to": ["Body"],
+      "notes": "Main body frame - dark metal"
+    },
+    "stiffener_steel": {
+      "baseColor": [0.647, 0.620, 0.588],
+      "metallic": 0.6,
+      "roughness": 0.4,
+      "applies_to": ["Langsstiver_NH", "Langsstiver_ØV", "Langsstiver_ØH", "Langsstiver_NV_2", "Langsstiver_NV_master002", "Tvarstiver_Vandret_ØV", "Tvarstiver_Vandret_ØH", "Tvarstiver_Vandret_NH"],
+      "notes": "Bracing stiffeners - warm gray steel"
+    },
+    "clamp_dark": {
+      "baseColor": [0.251, 0.251, 0.251],
+      "metallic": 0.5,
+      "roughness": 0.5,
+      "applies_to_pattern": ["Clamp*", "Handle*"],
+      "notes": "Clamps and handles - dark gray"
+    },
+    "side_mechanism": {
+      "baseColor": [0.318, 0.318, 0.318],
+      "metallic": 0.7,
+      "roughness": 0.35,
+      "applies_to_pattern": ["Stang*", "Plade_Tværstang*", "Side_left", "Side_right"],
+      "notes": "Side deployment struts - medium dark metal"
+    },
+    "feet_rubber": {
+      "baseColor": [0.192, 0.192, 0.192],
+      "metallic": 0.0,
+      "roughness": 0.9,
+      "applies_to_pattern": ["Fodder_*"],
+      "notes": "Feet - dark rubber/plastic"
+    },
+    "screen_emissive": {
+      "baseColor": [0.102, 0.102, 0.102],
+      "metallic": 0.0,
+      "roughness": 0.2,
+      "emissiveFactor": [0.3, 0.4, 0.5],
+      "applies_to": ["TV"],
+      "notes": "TV/monitor screen - dark with slight emissive glow"
+    },
+    "pc_case": {
+      "baseColor": [0.192, 0.192, 0.192],
+      "metallic": 0.3,
+      "roughness": 0.5,
+      "applies_to": ["PC2"],
+      "notes": "PC case - dark plastic/metal"
+    },
+    "tripod_metal": {
+      "baseColor": [0.518, 0.518, 0.518],
+      "metallic": 0.8,
+      "roughness": 0.3,
+      "applies_to_pattern": ["Tripod", "SOLID0*"],
+      "notes": "Tripod legs - polished metal"
+    },
+    "keyboard_plastic": {
+      "baseColor": [0.251, 0.251, 0.251],
+      "metallic": 0.0,
+      "roughness": 0.6,
+      "applies_to": ["keyboard", "Mouse 2"],
+      "notes": "Input devices - dark plastic"
+    },
+    "shelf_metal": {
+      "baseColor": [0.839, 0.839, 0.839],
+      "metallic": 0.5,
+      "roughness": 0.4,
+      "applies_to": ["Hylde"],
+      "notes": "Shelf - light gray metal"
+    },
+    "cable_black": {
+      "baseColor": [0.102, 0.102, 0.102],
+      "metallic": 0.0,
+      "roughness": 0.7,
+      "applies_to_pattern": ["1005703_A*", "1005866"],
+      "notes": "Cable trays and conduits - black rubber/plastic"
+    },
+    "controller_dark": {
+      "baseColor": [0.192, 0.192, 0.192],
+      "metallic": 0.2,
+      "roughness": 0.5,
+      "applies_to": ["Controller_OEM"],
+      "notes": "Controller unit - dark enclosure"
+    },
+    "electrical_green": {
+      "baseColor": [0.000, 0.753, 0.000],
+      "metallic": 0.0,
+      "roughness": 0.4,
+      "applies_to": ["Kontakt"],
+      "notes": "Electrical contacts - green indicator from STEP"
+    },
+    "generic_gray": {
+      "baseColor": [0.698, 0.698, 0.698],
+      "metallic": 0.3,
+      "roughness": 0.5,
+      "applies_to": ["_default_"],
+      "notes": "Fallback material for any unmapped parts"
+    }
+  },
+  "decimation_targets": {
+    "hero": {"target_ratio": 0.02, "min_vertices": 2000, "max_vertices": 20000},
+    "medium": {"target_ratio": 0.1, "min_vertices": 500, "max_vertices": 5000},
+    "small": {"target_ratio": 0.3, "min_vertices": 50, "max_vertices": 2000},
+    "cable_merge": {"merge_threshold_mm": 50, "target_per_group": 100, "max_total": 5000},
+    "tiny": {"keep_as_is": true}
+  }
+}
