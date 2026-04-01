@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/repos/spurious/.claude/**)",
+      "Bash(cp -r \"C:/repos/spurious/.claude/agents\" \"C:/repos/AnimateRobotFold/.claude/agents\")",
+      "Bash(cp -r \"C:/repos/spurious/.claude/commands\" \"C:/repos/AnimateRobotFold/.claude/commands\")",
+      "Bash(cp -r \"C:/repos/spurious/.claude/skills\" \"C:/repos/AnimateRobotFold/.claude/skills\")",
+      "Bash(cp -r \"C:/repos/spurious/.claude/helpers\" \"C:/repos/AnimateRobotFold/.claude/helpers\")"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "claude-flow",
+    "ruv-swarm",
+    "flow-nexus"
+  ]
+}
