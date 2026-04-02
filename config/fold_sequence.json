@@ -19,7 +19,7 @@
     {
       "step": 2,
       "name": "Attach Feet to Panels",
-      "parts": ["Fodder"],
+      "parts": ["Fodder", "Pad063", "Pad064", "Pad065"],
       "action": "attach_to_panels",
       "start_time": 1.5,
       "duration_seconds": 1.5,
@@ -49,7 +49,7 @@
     {
       "step": 5,
       "name": "Insert Stiffeners",
-      "parts": ["Langsstiver", "Tvarstiver"],
+      "parts": ["Langsstiver", "Tvarstiver", "Pad063", "Pad064", "Pad065"],
       "action": "slide_into_position",
       "start_time": 7.5,
       "duration_seconds": 2.0,
