@@ -1,6 +1,6 @@
 {
   "description": "Robot-in-a-Box unfold animation sequence",
-  "total_duration_seconds": 18,
+  "total_duration_seconds": 20,
   "style": "smooth_presentation",
   "user_scrubber": true,
   "sequence": [
@@ -18,86 +18,92 @@
     },
     {
       "step": 2,
+      "name": "Attach Feet to Panels",
+      "parts": ["Fodder"],
+      "action": "attach_to_panels",
+      "start_time": 1.5,
+      "duration_seconds": 1.5,
+      "notes": "Feet are removed from inside the box and attached to their respective side panels. Overlaps with lid opening."
+    },
+    {
+      "step": 3,
       "name": "Fold Down All Side Panels",
       "parts": ["Forside2", "Bag2", "Left2", "Right2"],
       "action": "rotate",
       "hinge_edge": "bottom",
       "angle_degrees": 180,
       "direction": "outward_flat",
-      "start_time": 2.5,
+      "start_time": 3.0,
       "duration_seconds": 3.0,
-      "notes": "All 4 panels fold simultaneously, hinge at bottom edge, fold outward to lay flat. Panels are connected like a cardboard box with fold lines. Tripods are attached to panels and deploy with them."
+      "notes": "All 4 panels fold simultaneously. Feet are attached and fold down with panels."
     },
     {
-      "step": 3,
+      "step": 4,
       "name": "Deploy Side Struts",
       "parts": ["Stang_Venstre", "Stang_Hojre", "Stang_bund002", "Plade_Tv"],
       "action": "deploy",
-      "start_time": 5.5,
+      "start_time": 6.0,
       "duration_seconds": 1.5,
       "notes": "Struts extend to hold panels in open/flat position"
     },
     {
-      "step": 4,
+      "step": 5,
       "name": "Insert Stiffeners",
       "parts": ["Langsstiver", "Tvarstiver"],
       "action": "slide_into_position",
-      "start_time": 7.0,
+      "start_time": 7.5,
       "duration_seconds": 2.0,
-      "notes": "8 bracing stiffeners slide into slots - separate pieces inserted into position"
+      "notes": "8 bracing stiffeners slide into slots"
     },
     {
-      "step": 5,
+      "step": 6,
       "name": "Flip Open Shelf with TV",
       "parts": ["Hylde", "TV", "Body", "SOLID012", "SOLID013", "SOLID014", "SOLID015", "SOLID016"],
       "action": "rotate",
       "direction": "flip_upward",
-      "start_time": 9.0,
+      "start_time": 9.5,
       "duration_seconds": 2.0,
-      "notes": "Shelf (Hylde) is hinged inside the box and flips upward, carrying the TV with it"
+      "notes": "Shelf flips upward carrying the TV"
     },
     {
-      "step": 6,
+      "step": 7,
       "name": "Move PC to Final Position",
       "parts": ["PC2"],
       "action": "translate",
       "direction": "right",
-      "start_time": 11.0,
+      "start_time": 11.5,
       "duration_seconds": 1.5,
-      "notes": "PC slides/moves to its final position on the right side"
-    },
-    {
-      "step": 7,
-      "name": "Deploy Feet",
-      "parts": ["Fodder_Forside", "Fodder_Top", "Fodder_Bagside", "Fodder_venstre", "Fodder_Højre"],
-      "action": "move_to_position",
-      "start_time": 12.5,
-      "duration_seconds": 1.5,
-      "notes": "5 feet stored inside the box move to their final positions"
+      "notes": "PC slides to final position on the right side"
     },
     {
       "step": 8,
       "name": "Place Keyboard and Mouse",
       "parts": ["keyboard", "Mouse 2"],
       "action": "translate",
-      "start_time": 14.0,
+      "start_time": 13.0,
       "duration_seconds": 1.5,
-      "notes": "Keyboard and mouse move out from inside the box and are placed in their working positions"
+      "notes": "Keyboard and mouse placed in working positions"
     },
     {
       "step": 9,
       "name": "Extend Robot Arm",
       "parts": ["C-2003903", "C-2003904", "C-2003907", "C-2003908", "C-2007307", "C-2007308", "C-2007309", "C-2007310", "C-2007311", "C-2007312", "C-2007588", "704-250-01_filled", "704-251-01_filled", "1005866"],
       "action": "extend_joints",
-      "start_time": 15.5,
+      "start_time": 14.5,
       "duration_seconds": 2.5,
-      "notes": "Robot arm is already upright inside the box - extends its joints to working position"
+      "notes": "Robot arm extends its joints to working position"
     }
   ],
+  "feet_panel_mapping": {
+    "Fodder_Forside": "Forside2",
+    "Fodder_Bagside": "Bag2",
+    "Fodder_venstre": "Left2",
+    "Fodder_H": "Right2",
+    "Fodder_Top": "Top2"
+  },
   "static_parts": {
     "base_never_moves": ["Palle", "Jernplade", "Sandwich_plade"],
-    "skip_animation": ["Clamps", "Handles"],
-    "attached_to_panels": ["Tripod"]
+    "skip_animation": ["Clamps", "Handles"]
   },
   "colors": {
     "source": "step_file",

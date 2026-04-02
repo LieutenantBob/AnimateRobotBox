@@ -78,14 +78,14 @@ const EQUIPMENT_FOLDS = {
   'Move PC to Final Position': {
     'PC2': [-1396, -180, 142],
   },
-  // Step 7: Feet deploy. Fold = pack inside box.
-  'Deploy Feet': {
-    'Fodder_Forside': [0, 1000, 470],
-    'Fodder_Top': [0, 2000, 470],
-    'Fodder_Bagside': [0, -1000, 470],
-    'Fodder_venstre': [500, 0, 470],
-    'Fodder_Højre': [-500, 0, 470],
-    '_default': [0, 0, 470],
+  // Step 2: Feet attach to panels. Fold = pack inside box from panel positions.
+  // Feet in unfolded state at Z=-70 below their panels. Move to box center [600,500,400].
+  'Attach Feet to Panels': {
+    'Fodder_Forside': [0, 1000, 470],     // from [600,-500,-70] to [600,500,400]
+    'Fodder_Top': [0, 2000, 470],         // from [600,-1500,-70] to [600,500,400]
+    'Fodder_Bagside': [0, -1000, 470],    // from [600,1500,-70] to [600,500,400]
+    'Fodder_venstre': [1100, -5, 470],    // from [-500,505,-70] to [600,500,400]
+    '_default': [-1100, -5, 470],          // Fodder_Højre from [1700,505,-70]
   },
   // Step 8: Keyboard and mouse placed. Fold = pack inside.
   'Place Keyboard and Mouse': {
@@ -157,31 +157,60 @@ export function createFoldAnimation(model, sequence) {
 
     // Panel rotation steps
     if (step.action === 'rotate' && (step.hinge_edge === 'bottom' || step.hinge_edge === 'front')) {
+      // Feet-panel mapping from config
+      const feetMapping = sequence.feet_panel_mapping || {};
+
       for (const partName of step.parts) {
         const fold = PANEL_FOLDS[partName];
         const meshes = findMeshes(partName);
 
         if (fold) {
-          // Use exact rotation from PANEL_FOLDS
+          const foldData = {
+            pivot: new THREE.Vector3(...fold.pivot),
+            axis: new THREE.Vector3(...fold.axis).normalize(),
+            angle: fold.angle,
+            postTranslate: fold.postTranslate ? new THREE.Vector3(...fold.postTranslate) : null,
+          };
+
+          // Apply fold to panel meshes
           for (const m of meshes) {
-            meshFolds.set(m.name, {
-              pivot: new THREE.Vector3(...fold.pivot),
-              axis: new THREE.Vector3(...fold.axis).normalize(),
-              angle: fold.angle,
-              postTranslate: fold.postTranslate ? new THREE.Vector3(...fold.postTranslate) : null,
-            });
+            meshFolds.set(m.name, foldData);
+          }
+
+          // Also apply the SAME fold rotation to feet attached to this panel
+          for (const [footName, panelName] of Object.entries(feetMapping)) {
+            if (panelName === partName || partName.includes(panelName) || panelName.includes(partName)) {
+              const footMeshes = findMeshes(footName);
+              for (const m of footMeshes) {
+                meshFolds.set(m.name, foldData);
+                // Also add to allMeshes so the step processes them
+                if (!allMeshes.some(am => am.name === m.name)) {
+                  allMeshes.push(m);
+                }
+              }
+            }
           }
         } else if (partName === 'Top2') {
-          // Top2 (lid): use pure translation from unfolded to folded position.
-          // Unfolded center: [600, -1503, 21]. Folded: [600, 500, 1043].
-          // Delta: [0, 2003, 1022]. Also rotate 90° so it lays flat on top.
           for (const m of meshes) {
             meshFolds.set(m.name, {
               pivot: new THREE.Vector3(600, -1503, 21),
-              axis: new THREE.Vector3(0, 0, 0), // no rotation axis
+              axis: new THREE.Vector3(0, 0, 0),
               angle: 0,
               postTranslate: new THREE.Vector3(0, 2003, 1022),
             });
+          }
+          // Fodder_Top rides with the lid
+          const topFoot = findMeshes('Fodder_Top');
+          for (const m of topFoot) {
+            meshFolds.set(m.name, {
+              pivot: new THREE.Vector3(600, -1503, 21),
+              axis: new THREE.Vector3(0, 0, 0),
+              angle: 0,
+              postTranslate: new THREE.Vector3(0, 2003, 1022),
+            });
+            if (!allMeshes.some(am => am.name === m.name)) {
+              allMeshes.push(m);
+            }
           }
         }
       }
