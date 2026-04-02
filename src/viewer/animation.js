@@ -50,17 +50,8 @@ const PANEL_FOLDS = {
     axis: [0, -1, 0],   // negative Y rotation
     angle: Math.PI / 2,
   },
-  'Top2': {
-    // Top2 unfolded: center at [600, -1503, 21]. Folded: center at [600, 500, 1043].
-    // It lies flat beyond the front panel. To fold: rotate it up like the front panel
-    // (pivot at Y=0), then translate to sit on top of the box walls.
-    // Rotation puts its center at roughly [600, -11, 1535] (rotated -90° around X at Y=0,Z=32)
-    // Then translate to [600, 500, 1043]: delta = [0, 511, -492]
-    pivot: [600, 0, 32],
-    axis: [-1, 0, 0],
-    angle: Math.PI / 2,
-    postTranslate: [0, 511, -492],
-  },
+  // Top2 handled separately as a translation (not in PANEL_FOLDS)
+  // because it needs to move from Y=-1503,Z=21 to Y=500,Z=1043
 };
 
 // Box interior: X[5,1195] Y[5,995] Z[32,1032]
@@ -168,15 +159,30 @@ export function createFoldAnimation(model, sequence) {
     if (step.action === 'rotate' && (step.hinge_edge === 'bottom' || step.hinge_edge === 'front')) {
       for (const partName of step.parts) {
         const fold = PANEL_FOLDS[partName];
-        if (!fold) continue;
         const meshes = findMeshes(partName);
-        for (const m of meshes) {
-          meshFolds.set(m.name, {
-            pivot: new THREE.Vector3(...fold.pivot),
-            axis: new THREE.Vector3(...fold.axis).normalize(),
-            angle: fold.angle,
-            postTranslate: fold.postTranslate ? new THREE.Vector3(...fold.postTranslate) : null,
-          });
+
+        if (fold) {
+          // Use exact rotation from PANEL_FOLDS
+          for (const m of meshes) {
+            meshFolds.set(m.name, {
+              pivot: new THREE.Vector3(...fold.pivot),
+              axis: new THREE.Vector3(...fold.axis).normalize(),
+              angle: fold.angle,
+              postTranslate: fold.postTranslate ? new THREE.Vector3(...fold.postTranslate) : null,
+            });
+          }
+        } else if (partName === 'Top2') {
+          // Top2 (lid): use pure translation from unfolded to folded position.
+          // Unfolded center: [600, -1503, 21]. Folded: [600, 500, 1043].
+          // Delta: [0, 2003, 1022]. Also rotate 90° so it lays flat on top.
+          for (const m of meshes) {
+            meshFolds.set(m.name, {
+              pivot: new THREE.Vector3(600, -1503, 21),
+              axis: new THREE.Vector3(0, 0, 0), // no rotation axis
+              angle: 0,
+              postTranslate: new THREE.Vector3(0, 2003, 1022),
+            });
+          }
         }
       }
     }
