@@ -246,23 +246,30 @@ export function createFoldAnimation(model, sequence) {
             }
           }
         } else if (partName === 'Top2') {
+          // Lid hinges at front edge of box top.
+          // Fold = translate to box top + rotate closed around front hinge.
+          //
+          // Unfolded: lid flat at center [600, -1503, 21]
+          // Folded: lid horizontal on top of box at center [600, 500, 1043]
+          // Front hinge position (when folded): [600, 30, 1043]
+          //
+          // At foldAmount=1: full translate + full rotation = lid on top (closed)
+          // As foldAmount decreases: rotation releases first (lid flips open),
+          //   then translation releases (lid slides to flat position)
+          const lidFold = {
+            pivot: new THREE.Vector3(600, 30, 1043), // front hinge
+            axis: new THREE.Vector3(1, 0, 0),        // rotate around X
+            angle: Math.PI * 0.55,                    // ~99° to close the lid flat on top
+            postTranslate: new THREE.Vector3(0, 2003, 1022), // move to box top
+            isLid: true,
+          };
           for (const m of meshes) {
-            meshFolds.set(m.name, {
-              pivot: new THREE.Vector3(600, -1503, 21),
-              axis: new THREE.Vector3(0, 0, 0),
-              angle: 0,
-              postTranslate: new THREE.Vector3(0, 2003, 1022),
-            });
+            meshFolds.set(m.name, lidFold);
           }
           // Fodder_Top rides with the lid
           const topFoot = findMeshes('Fodder_Top');
           for (const m of topFoot) {
-            meshFolds.set(m.name, {
-              pivot: new THREE.Vector3(600, -1503, 21),
-              axis: new THREE.Vector3(0, 0, 0),
-              angle: 0,
-              postTranslate: new THREE.Vector3(0, 2003, 1022),
-            });
+            meshFolds.set(m.name, lidFold);
             if (!allMeshes.some(am => am.name === m.name)) {
               allMeshes.push(m);
             }
@@ -442,6 +449,36 @@ export function createFoldAnimation(model, sequence) {
               const stagingPhase = foldAmount * 2; // 0→1 as foldAmount 0→0.5
               _translation.copy(fold.toStaging).multiplyScalar(stagingPhase);
               mesh.position.add(_translation);
+            }
+            continue;
+          }
+
+          // Lid 2-phase fold: translate first, then rotate closed
+          if (fold.isLid) {
+            // Phase 1 (foldAmount 0→0.5): translate from flat to near box top
+            // Phase 2 (foldAmount 0.5→1): rotate closed around front hinge
+            const translateAmount = Math.min(1, foldAmount * 2); // ramps 0→1 over first half
+            const rotateAmount = Math.max(0, (foldAmount - 0.5) * 2); // ramps 0→1 over second half
+
+            // Apply translation (move to box top position)
+            if (fold.postTranslate) {
+              _translation.copy(fold.postTranslate).multiplyScalar(translateAmount);
+              mesh.position.add(_translation);
+            }
+
+            // Apply rotation (close the lid around front hinge)
+            if (fold.angle !== 0 && rotateAmount > 0) {
+              const angle = fold.angle * rotateAmount;
+              _quat.setFromAxisAngle(fold.axis, angle);
+
+              _offset.copy(mesh.position).sub(fold.pivot);
+              _offset.applyQuaternion(_quat);
+              mesh.position.copy(fold.pivot).add(_offset);
+
+              const orig = originalTransforms.get(name);
+              if (orig) {
+                mesh.quaternion.copy(orig.quaternion).premultiply(_quat);
+              }
             }
             continue;
           }
