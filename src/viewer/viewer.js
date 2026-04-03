@@ -16,6 +16,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.LinearToneMapping;
 renderer.toneMappingExposure = 1.5;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -29,6 +31,16 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
 const mainLight = new THREE.DirectionalLight(0xfff5e6, 2.0);
 mainLight.position.set(2000, 3000, 1500);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.width = 2048;
+mainLight.shadow.mapSize.height = 2048;
+mainLight.shadow.camera.left = -3000;
+mainLight.shadow.camera.right = 3000;
+mainLight.shadow.camera.top = 3000;
+mainLight.shadow.camera.bottom = -3000;
+mainLight.shadow.camera.near = 100;
+mainLight.shadow.camera.far = 8000;
+mainLight.shadow.bias = -0.001;
 scene.add(mainLight);
 
 const fillLight = new THREE.DirectionalLight(0xc4d4ff, 0.8);
@@ -62,9 +74,42 @@ const envTexture = pmremGenerator.fromScene(envScene).texture;
 scene.environment = envTexture;
 pmremGenerator.dispose();
 
-// Ground grid
-const gridHelper = new THREE.GridHelper(5000, 50, 0x333355, 0x222244);
+// --- Room environment ---
+// Floor
+const floorGeo = new THREE.PlaneGeometry(8000, 8000);
+const floorMat = new THREE.MeshStandardMaterial({
+  color: 0x555560,
+  roughness: 0.8,
+  metalness: 0.1,
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -151;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Back wall
+const wallGeo = new THREE.PlaneGeometry(8000, 4000);
+const wallMat = new THREE.MeshStandardMaterial({
+  color: 0x666670,
+  roughness: 0.9,
+  metalness: 0.0,
+});
+const backWall = new THREE.Mesh(wallGeo, wallMat);
+backWall.position.set(0, 1849, -3000);
+scene.add(backWall);
+
+// Left wall
+const leftWall = new THREE.Mesh(wallGeo, wallMat);
+leftWall.rotation.y = Math.PI / 2;
+leftWall.position.set(-3000, 1849, 0);
+scene.add(leftWall);
+
+// Subtle floor grid overlay
+const gridHelper = new THREE.GridHelper(8000, 40, 0x444450, 0x3a3a45);
 gridHelper.position.y = -150;
+gridHelper.material.opacity = 0.3;
+gridHelper.material.transparent = true;
 scene.add(gridHelper);
 
 // --- State ---
@@ -154,10 +199,16 @@ async function loadModel() {
     );
     controls.update();
 
-    // Apply PBR materials
+    // Apply PBR materials and enable shadows
     if (materialsConfig) {
       applyMaterials(gltf.scene, materialsConfig);
     }
+    gltf.scene.traverse((node) => {
+      if (node.isMesh) {
+        node.castShadow = true;
+        node.receiveShadow = true;
+      }
+    });
 
     // Set up programmatic animation
     if (sequence) {
