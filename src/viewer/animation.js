@@ -86,22 +86,49 @@ const STIFFENER_NAMES = [
   'Tvarstiver_Vandret_\\xd8V',
 ];
 
+/**
+ * Detach-from-lid data: applied AFTER panel fold in array order.
+ * At foldAmount=1, translates feet from wall position to lid-top (neatly lined up)
+ * and slerps orientation to match Fodder_Top (flat on lid).
+ *
+ * GLB mesh positions are all [0,0,0]; geometry is offset.
+ * Wall positions after panel fold (foldAmount=1):
+ *   Forside: [0, -32, 32]      Bagside: [0, 1032, -968]
+ *   venstre: [-32, 0, 32]      H: [1232, 0, -1168]
+ *
+ * Lid target: evenly spaced near Fodder_Top [0,-1000,1064], row along X.
+ */
+const LID_DETACH_OFFSETS = {
+  // Offsets account for geometry center differences so all feet
+  // visually stack on top of Fodder_Top at t=0.
+  // Target mesh positions computed from: visual = meshPos + R*geomCenter
+  // where R is 180° X rotation, matching Fodder_Top's visual at [600,500,1134].
+  'Fodder_Forside':    [0, 32, 1032],         // wall [0,-32,32]     → meshPos [0,0,1064]
+  'Fodder_Bagside':    [0, 968, 2032],        // wall [0,1032,-968]  → meshPos [0,2000,1064]
+  'Fodder_venstre':    [1132, 1005, 1032],    // wall [-32,0,32]     → meshPos [1100,1005,1064]
+  'Fodder_H\u00f8jre': [-2332, 1005, 2232],  // wall [1232,0,-1168] → meshPos [-1100,1005,1064]
+  'Fodder_H\\xf8jre':  [-2332, 1005, 2232],  // byte-escaped variant
+};
+
+// Quaternion matching Fodder_Top at t=0 (180° around X = lid closed, lying flat)
+const LID_QUAT = new THREE.Quaternion(-1, 0, 0, 0);
+
 // "Staging area" next to the box where stiffeners wait during panel folding
 // Positioned to the side at Y=-300 (in front of box), spread out along X
 const STIFFENER_STAGING = {
-  'Langsstiver_NH':              [-200, 200, 32],
-  'Langsstiver_NV_2':            [-200, 400, 32],
-  'Langsstiver_NV_master002':    [-200, 600, 32],
-  'Langsstiver_\u00d8H':         [-200, 800, 32],
-  'Langsstiver_\u00d8V':         [1400, 200, 32],
-  'Tvarstiver_Vandret_NH':       [1400, 400, 32],
-  'Tvarstiver_Vandret_\u00d8H':  [1400, 600, 32],
-  'Tvarstiver_Vandret_\u00d8V':  [1400, 800, 32],
+  'Langsstiver_NH':              [-400, 100, 32],
+  'Langsstiver_NV_2':            [-400, 400, 32],
+  'Langsstiver_NV_master002':    [-400, 700, 32],
+  'Langsstiver_\u00d8H':         [-400, 1000, 32],
+  'Langsstiver_\u00d8V':         [1600, 100, 32],
+  'Tvarstiver_Vandret_NH':       [1600, 400, 32],
+  'Tvarstiver_Vandret_\u00d8H':  [1600, 700, 32],
+  'Tvarstiver_Vandret_\u00d8V':  [1600, 1000, 32],
   // Escaped byte variants
-  'Langsstiver_\\xd8H':          [-200, 800, 32],
-  'Langsstiver_\\xd8V':          [1400, 200, 32],
-  'Tvarstiver_Vandret_\\xd8H':   [1400, 600, 32],
-  'Tvarstiver_Vandret_\\xd8V':   [1400, 800, 32],
+  'Langsstiver_\\xd8H':          [-400, 1000, 32],
+  'Langsstiver_\\xd8V':          [1600, 100, 32],
+  'Tvarstiver_Vandret_\\xd8H':   [1600, 700, 32],
+  'Tvarstiver_Vandret_\\xd8V':   [1600, 1000, 32],
 };
 
 /**
@@ -130,27 +157,16 @@ const EQUIPMENT_FOLDS = {
   'Move PC to Final Position': {
     'PC2': [-1396, -180, 142],
   },
-  // Step 2: Feet attach to panels. Fold = pack inside box from panel positions.
-  // Feet in unfolded state at Z=-70 below their panels. Move to box center [600,500,400].
-  'Attach Feet to Panels': {
-    'Fodder_Forside': [0, 1000, 470],     // from [600,-500,-70] to [600,500,400]
-    'Fodder_Top': [0, 2000, 470],         // from [600,-1500,-70] to [600,500,400]
-    'Fodder_Bagside': [0, -1000, 470],    // from [600,1500,-70] to [600,500,400]
-    'Fodder_venstre': [1100, -5, 470],    // from [-500,505,-70] to [600,500,400]
-    '_default': [-1100, -5, 470],          // Fodder_Højre from [1700,505,-70]
-    'Pad063': [-696, 346, 366],             // from [1296,154,34] to box center
-    'Pad064': [799, 300, 366],              // from [-199,200,34] to box center
-    'Pad065': [1206, 300, 366],             // from [-606,200,34] to box center
-  },
   // Step 8: Keyboard and mouse placed. Fold = pack inside.
   'Place Keyboard and Mouse': {
     'keyboard': [619, -906, -500],
     'Mouse 2': [400, -800, -400],
     '_default': [400, -800, -400],
   },
-  // Step 9: Robot arm extends. Fold = retract toward box.
+  // Step 9: Robot arm — keep in final position, don't retract into box
+  // Joint animation is handled separately
   'Extend Robot Arm': {
-    '_default_outside': true,
+    '_skip_fold': true,
   },
 };
 
@@ -197,7 +213,7 @@ export function createFoldAnimation(model, sequence) {
   }
 
   // Build steps
-  const steps = sequence.sequence.map((step) => {
+  const steps = (sequence.sequence || []).map((step) => {
     const allMeshes = [];
     for (const partName of step.parts) {
       allMeshes.push(...findMeshes(partName));
@@ -232,47 +248,42 @@ export function createFoldAnimation(model, sequence) {
             meshFolds.set(m.name, foldData);
           }
 
-          // Also apply the SAME fold rotation to feet attached to this panel
+          // Also apply same fold to feet mapped to this panel
           for (const [footName, panelName] of Object.entries(feetMapping)) {
-            if (panelName === partName || partName.includes(panelName) || panelName.includes(partName)) {
+            if (panelName === partName) {
               const footMeshes = findMeshes(footName);
-              for (const m of footMeshes) {
-                meshFolds.set(m.name, foldData);
-                // Also add to allMeshes so the step processes them
-                if (!allMeshes.some(am => am.name === m.name)) {
-                  allMeshes.push(m);
+              for (const fm of footMeshes) {
+                if (!allMeshes.some(m => m.name === fm.name)) {
+                  allMeshes.push(fm);
                 }
+                meshFolds.set(fm.name, foldData);
               }
             }
           }
         } else if (partName === 'Top2') {
-          // Lid hinges at front edge of box top.
-          // Fold = translate to box top + rotate closed around front hinge.
-          //
-          // Unfolded: lid flat at center [600, -1503, 21]
-          // Folded: lid horizontal on top of box at center [600, 500, 1043]
-          // Front hinge position (when folded): [600, 30, 1043]
-          //
-          // At foldAmount=1: full translate + full rotation = lid on top (closed)
-          // As foldAmount decreases: rotation releases first (lid flips open),
-          //   then translation releases (lid slides to flat position)
+          // Lid hinges at top edge of Forside2 wall.
+          // Two-phase fold (like robot arm dual-axis):
+          //   Phase 1: 90° around front bottom edge [600,0,32] — swings lid vertical
+          //   Phase 2: 90° around front top edge [600,0,1032] — closes lid flat on top
           const lidFold = {
-            pivot: new THREE.Vector3(600, 30, 1043), // front hinge
-            axis: new THREE.Vector3(1, 0, 0),        // rotate around X
-            angle: Math.PI * 0.55,                    // ~99° to close the lid flat on top
-            postTranslate: new THREE.Vector3(0, 2003, 1022), // move to box top
-            isLid: true,
+            pivot: new THREE.Vector3(600, 0, 32),
+            axis: new THREE.Vector3(-1, 0, 0),
+            angle: Math.PI / 2,                        // 90° — swing up to vertical
+            secondaryPivot: new THREE.Vector3(600, 0, 1032),
+            secondaryAxis: new THREE.Vector3(-1, 0, 0),
+            secondaryAngle: Math.PI / 2,               // 90° — close flat on top
+            isRobot: true,                             // reuse dual-axis rotation logic
           };
           for (const m of meshes) {
             meshFolds.set(m.name, lidFold);
           }
-          // Fodder_Top rides with the lid
-          const topFoot = findMeshes('Fodder_Top');
-          for (const m of topFoot) {
-            meshFolds.set(m.name, lidFold);
-            if (!allMeshes.some(am => am.name === m.name)) {
-              allMeshes.push(m);
+          // Fodder_Top rides on the lid — same fold
+          const topFootMeshes = findMeshes('Fodder_Top');
+          for (const fm of topFootMeshes) {
+            if (!allMeshes.some(m => m.name === fm.name)) {
+              allMeshes.push(fm);
             }
+            meshFolds.set(fm.name, lidFold);
           }
         }
       }
@@ -280,22 +291,62 @@ export function createFoldAnimation(model, sequence) {
 
     // Shelf+TV flip
     if (step.action === 'rotate' && step.direction === 'flip_upward') {
+      // Shelf+TV fold: pivot at the bottom-back edge of the box,
+      // swing parts down and inward to pack flat inside.
+      // Use a shared pivot so all shelf parts move together.
+      const shelfPivot = new THREE.Vector3(600, 1000, 32);
       for (const m of allMeshes) {
-        // TV center at [631, 2472, 1244], Body at [653, 2541, 580], Hylde at [137, 1372, 532]
-        // These need to fold flat and pack inside the box.
-        // Rotate down (fold flat), then translate into box interior.
         const center = getGeometryCenter([m]);
         meshFolds.set(m.name, {
-          pivot: new THREE.Vector3(center.x, center.y, 32),
-          axis: new THREE.Vector3(1, 0, 0),
-          angle: Math.PI / 4, // partial fold
-          // Also translate toward box center
+          pivot: shelfPivot,
+          axis: new THREE.Vector3(-1, 0, 0),  // fold backward and down
+          angle: Math.PI * 0.6, // ~108° to clear the panels
           postTranslate: new THREE.Vector3(
             BOX_CENTER[0] - center.x,
             BOX_CENTER[1] - center.y,
             BOX_CENTER[2] - center.z
-          ).multiplyScalar(0.85),
+          ).multiplyScalar(0.7),
         });
+      }
+    }
+
+    // Lift from box: 3-phase arc — inside box → up over wall → down to floor
+    if (step.action === 'lift_from_box') {
+      for (const { mesh, name: meshName } of allMeshes) {
+        const center = getGeometryCenter([{ mesh, name: meshName }]);
+        let floorPos = STIFFENER_STAGING[meshName];
+        if (!floorPos) {
+          floorPos = [center.x < 600 ? -300 : 1500, center.y, 32];
+        }
+
+        meshFolds.set(meshName, {
+          pivot: new THREE.Vector3(),
+          axis: new THREE.Vector3(),
+          angle: 0,
+          isLift: true,
+          floorPos: new THREE.Vector3(...floorPos),
+          boxPos: new THREE.Vector3(...BOX_CENTER),
+          liftHeight: 1200,
+          geomCenter: center.clone(),
+        });
+      }
+    }
+
+    // Feet detach from lid: slide wall→lid + slerp orientation to flat.
+    // Must be processed AFTER the panel fold step in array order.
+    if (step.action === 'detach_from_lid') {
+      for (const { name: meshName } of allMeshes) {
+        const offset = LID_DETACH_OFFSETS[meshName];
+        if (offset) {
+          meshFolds.set(meshName, {
+            pivot: new THREE.Vector3(),
+            axis: new THREE.Vector3(),
+            angle: 0,
+            isDetachFromLid: true,
+            lidOffset: new THREE.Vector3(...offset),
+            lidQuat: LID_QUAT,
+          });
+        }
       }
     }
 
@@ -341,13 +392,43 @@ export function createFoldAnimation(model, sequence) {
       }
     }
 
+    // Robot arm joint animation: rotate entire assembly from parked to working
+    let isRobotStep = false;
+    if (step.action === 'robot_joints') {
+      isRobotStep = true;
+      // Robot base mount point (where arm attaches to base plate)
+      // In OBJ Z-up coords, approximately center of the robot base
+      const robotBase = new THREE.Vector3(600, 490, 370);
+      // Rotation: from parked (upright, ~30° tilt) to working (current GLB position)
+      // We apply a "park" rotation that tilts the arm upright when foldAmount=1
+      const parkAxis = new THREE.Vector3(0, 1, 0).normalize(); // rotate around Y in OBJ space
+      const parkAngle = Math.PI * 0.15; // ~27° swing
+      // Also tilt the arm segments upward when parked
+      const tiltAxis = new THREE.Vector3(1, 0, 0).normalize();
+      const tiltAngle = Math.PI * 0.2; // ~36° upward tilt
+
+      for (const m of allMeshes) {
+        meshFolds.set(m.name, {
+          pivot: robotBase,
+          axis: parkAxis,
+          angle: parkAngle,
+          // Also add a tilt component
+          secondaryPivot: robotBase,
+          secondaryAxis: tiltAxis,
+          secondaryAngle: tiltAngle,
+          isRobot: true,
+        });
+      }
+    }
+
     // Translation-based folds: move equipment toward box center
     // Use precise per-part translations from EQUIPMENT_FOLDS if available
     const perMeshTranslations = new Map();
     const equipFold = EQUIPMENT_FOLDS[step.name];
 
     if (allMeshes.length > 0 &&
-        (step.action !== 'rotate' || !step.hinge_edge)) {
+        (step.action !== 'rotate' || !step.hinge_edge) &&
+        !(equipFold && equipFold['_skip_fold'])) {
       for (const { mesh, name: meshName } of allMeshes) {
         // Skip parts already handled by meshFolds (stiffeners, panels, etc.)
         if (meshFolds.has(meshName)) continue;
@@ -384,7 +465,7 @@ export function createFoldAnimation(model, sequence) {
       meshes: allMeshes,
       meshFolds,
       perMeshTranslations,
-      startTime: step.start_time,
+      startTime: step.start_time ?? 0,
       duration: Math.max(0.001, step.duration_seconds || 1),
     };
   });
@@ -401,16 +482,6 @@ export function createFoldAnimation(model, sequence) {
         mesh.scale.copy(orig.scale);
       }
     });
-
-    // Hide orphan parts when folded (scale to 0 at t=0, restore at t>halfway)
-    const overallProgress = t / totalDuration; // 0=folded, 1=unfolded
-    for (const hideName of HIDE_WHEN_FOLDED) {
-      const mesh = meshMap.get(hideName);
-      if (mesh) {
-        const showAmount = Math.min(1, overallProgress * 3); // ramp up in first third
-        mesh.scale.setScalar(showAmount);
-      }
-    }
 
     // Apply fold transforms
     for (const step of steps) {
@@ -430,6 +501,17 @@ export function createFoldAnimation(model, sequence) {
         for (const { mesh, name } of step.meshes) {
           const fold = step.meshFolds.get(name);
           if (!fold) continue;
+
+          // Feet detach from lid: translate wall→lid + slerp to flat orientation.
+          // Runs AFTER panel fold in array order, so we can override orientation.
+          if (fold.isDetachFromLid) {
+            _translation.copy(fold.lidOffset).multiplyScalar(foldAmount);
+            mesh.position.add(_translation);
+            if (foldAmount > 0) {
+              mesh.quaternion.slerp(fold.lidQuat, foldAmount);
+            }
+            continue;
+          }
 
           // Stiffener 3-phase animation
           if (fold.toStaging && fold.toBox) {
@@ -453,32 +535,83 @@ export function createFoldAnimation(model, sequence) {
             continue;
           }
 
-          // Lid 2-phase fold: translate first, then rotate closed
-          if (fold.isLid) {
-            // Phase 1 (foldAmount 0→0.5): translate from flat to near box top
-            // Phase 2 (foldAmount 0.5→1): rotate closed around front hinge
-            const translateAmount = Math.min(1, foldAmount * 2); // ramps 0→1 over first half
-            const rotateAmount = Math.max(0, (foldAmount - 0.5) * 2); // ramps 0→1 over second half
+          // Lift from box: 3-phase arc animation
+          if (fold.isLift) {
+            if (fold.isAdditiveLift) {
+              // Additive lift for feet — offset on top of attach-step position
+              // foldAmount=1 → at box center, foldAmount=0 → at floor (zero offset)
+              const bOff = fold.boxOffset;
+              const czOff = fold.clearanceZOff;
 
-            // Apply translation (move to box top position)
-            if (fold.postTranslate) {
-              _translation.copy(fold.postTranslate).multiplyScalar(translateAmount);
-              mesh.position.add(_translation);
-            }
-
-            // Apply rotation (close the lid around front hinge)
-            if (fold.angle !== 0 && rotateAmount > 0) {
-              const angle = fold.angle * rotateAmount;
-              _quat.setFromAxisAngle(fold.axis, angle);
-
-              _offset.copy(mesh.position).sub(fold.pivot);
-              _offset.applyQuaternion(_quat);
-              mesh.position.copy(fold.pivot).add(_offset);
-
-              const orig = originalTransforms.get(name);
-              if (orig) {
-                mesh.quaternion.copy(orig.quaternion).premultiply(_quat);
+              if (foldAmount > 0.66) {
+                // Phase 1: in box, rising to clearance height
+                const phase = (1 - foldAmount) / 0.34;
+                mesh.position.x += bOff.x;
+                mesh.position.y += bOff.y;
+                mesh.position.z += bOff.z + (czOff - bOff.z) * phase;
+              } else if (foldAmount > 0.33) {
+                // Phase 2: at clearance, moving horizontally to above floor
+                const phase = (0.66 - foldAmount) / 0.33;
+                mesh.position.x += bOff.x * (1 - phase);
+                mesh.position.y += bOff.y * (1 - phase);
+                mesh.position.z += czOff;
+              } else {
+                // Phase 3: descending to floor
+                const phase = (0.33 - foldAmount) / 0.33;
+                mesh.position.z += czOff * (1 - phase);
               }
+            } else {
+              // Original absolute lift for stiffeners etc.
+              const boxPos = fold.boxPos;
+              const floorPos = fold.floorPos;
+              const liftH = fold.liftHeight;
+              const geomCenter = fold.geomCenter;
+
+              if (foldAmount > 0.66) {
+                const phase = (1 - foldAmount) / 0.34;
+                const inBoxOffset = boxPos.clone().sub(geomCenter);
+                _translation.copy(inBoxOffset);
+                mesh.position.add(_translation);
+                mesh.position.z += liftH * phase;
+              } else if (foldAmount > 0.33) {
+                const phase = (0.66 - foldAmount) / 0.33;
+                const aboveBox = new THREE.Vector3(boxPos.x, boxPos.y, boxPos.z + liftH);
+                const aboveFloor = new THREE.Vector3(floorPos.x, floorPos.y, floorPos.z + liftH);
+                const target = aboveBox.clone().lerp(aboveFloor, phase);
+                _translation.copy(target).sub(geomCenter);
+                mesh.position.add(_translation);
+              } else {
+                const phase = (0.33 - foldAmount) / 0.33;
+                const aboveFloor = new THREE.Vector3(floorPos.x, floorPos.y, floorPos.z + liftH);
+                const onFloor = new THREE.Vector3(floorPos.x, floorPos.y, floorPos.z);
+                const target = aboveFloor.clone().lerp(onFloor, phase);
+                _translation.copy(target).sub(geomCenter);
+                mesh.position.add(_translation);
+              }
+            }
+            continue;
+          }
+
+          // Robot arm: dual-axis rotation from working→parked
+          if (fold.isRobot) {
+            // Apply swing rotation
+            const swingAngle = fold.angle * foldAmount;
+            _quat.setFromAxisAngle(fold.axis, swingAngle);
+            _offset.copy(mesh.position).sub(fold.pivot);
+            _offset.applyQuaternion(_quat);
+            mesh.position.copy(fold.pivot).add(_offset);
+            const orig = originalTransforms.get(name);
+            if (orig) {
+              mesh.quaternion.copy(orig.quaternion).premultiply(_quat);
+            }
+            // Apply tilt rotation on top
+            if (fold.secondaryAngle !== 0) {
+              const tiltAngle = fold.secondaryAngle * foldAmount;
+              _quat.setFromAxisAngle(fold.secondaryAxis, tiltAngle);
+              _offset.copy(mesh.position).sub(fold.secondaryPivot);
+              _offset.applyQuaternion(_quat);
+              mesh.position.copy(fold.secondaryPivot).add(_offset);
+              mesh.quaternion.premultiply(_quat);
             }
             continue;
           }
@@ -516,20 +649,95 @@ export function createFoldAnimation(model, sequence) {
         }
       }
     }
+
+    // Hide loose parts until their animation step starts.
+    // This runs AFTER fold transforms so it cleanly overrides.
+    for (const { name: meshName, mesh } of packIntoBox) {
+      let stepStarted = false;
+      for (const step of steps) {
+        if (step.meshes.some(m => m.name === meshName) && t >= step.startTime) {
+          stepStarted = true;
+          break;
+        }
+      }
+      mesh.visible = stepStarted || t >= totalDuration;
+    }
   }
 
-  // Hide small orphan parts that aren't covered by animation steps
-  // These are tiny spacer pads that float visibly outside the box
-  // Parts outside the box that aren't in any animation step — hide when folded
-  const HIDE_WHEN_FOLDED = [
-    'Pad063', 'Pad064', 'Pad065', '1005867',
+  // Parts animated by steps — these are moved by the fold engine
+  const animatedParts = new Set();
+  for (const step of steps) {
+    for (const { name } of step.meshes) {
+      animatedParts.add(name);
+    }
+  }
+
+  // Base parts that sit on the floor and never need folding
+  const alwaysVisible = new Set([
+    'Palle', 'Jernplade', 'Sandwich_plade',
+    // Robot arm — always visible in final position
+    'C-2003903', 'C-2003904', 'C-2003907', 'C-2003908',
+    'C-2007307', 'C-2007308', 'C-2007309', 'C-2007310',
+    'C-2007311', 'C-2007312', 'C-2007588',
+    '704-250-01_filled', '704-251-01_filled', '1005866',
+  ]);
+
+  // Parts that should be packed into the box center when folded.
+  // Patterns match by exact name or prefix.
+  const PACK_PATTERNS = [
     'Handle_Left', 'Handle_Right',
-    '1', // unnamed mesh at [-152,1307,906]
+    'Langsstiver', 'Tvarstiver',  // stiffeners (prefix, all variants)
+    'SOLID',                       // tripod solids (prefix)
+    'Tripod',                      // tripod parts (prefix)
+    'Controller_OEM', 'Kontakt',
+    '1005703_A',                   // cable conduits (prefix)
+    '1005867',
+    'Pad0',                        // pads (prefix)
+    'Stang_', 'Stang_bund',       // side struts (prefix)
+    'Plade_T',                     // strut plates (prefix)
+    'Hylde', 'TV', 'Body',        // shelf + TV
+    'PC2',                         // PC
+    'keyboard', 'Mouse ',
+    '1',                           // unnamed mesh
   ];
+
+  // Never pack these — they are the box structure or base
+  const NEVER_PACK = new Set([
+    'Forside2', 'Bag2', 'Left2', 'Right2', 'Top2',
+    'Palle', 'Jernplade', 'Sandwich_plade',
+    ...alwaysVisible,
+  ]);
+
+  // Build list of meshes to pack and pre-compute their geometry centers
+  const packIntoBox = [];
+  const packCenters = new Map();
+  meshMap.forEach((mesh, name) => {
+    if (NEVER_PACK.has(name)) return;
+
+    const shouldPack = PACK_PATTERNS.some(p => name === p || name.startsWith(p));
+    if (shouldPack) {
+      packIntoBox.push({ name, mesh });
+      if (mesh.geometry) {
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        const bb = mesh.geometry.boundingBox;
+        if (bb) {
+          packCenters.set(name, bb.getCenter(new THREE.Vector3()));
+        }
+      }
+      if (!packCenters.has(name)) {
+        packCenters.set(name, new THREE.Vector3(600, 500, 200));
+      }
+    }
+  });
+
+  const HIDE_WHEN_FOLDED = [];
 
   // Expose mesh names for debugging (accessible via browser console)
   window.__animationDebug = {
     meshNames: [...meshMap.keys()],
+    meshMap,
+    animatedParts,
+    alwaysVisible,
     stiffenerMatches: STIFFENER_NAMES.filter(n => meshMap.has(n)),
     stiffenerMisses: STIFFENER_NAMES.filter(n => !meshMap.has(n)),
     stiffenerLike: [...meshMap.keys()].filter(n => n.includes('stiver') || n.includes('Langs') || n.includes('Tvars')),
