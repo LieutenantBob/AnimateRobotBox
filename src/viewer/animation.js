@@ -98,16 +98,40 @@ const STIFFENER_NAMES = [
  *
  * Lid target: evenly spaced near Fodder_Top [0,-1000,1064], row along X.
  */
-const LID_DETACH_OFFSETS = {
-  // Offsets account for geometry center differences so all feet
-  // visually stack on top of Fodder_Top at t=0.
-  // Target mesh positions computed from: visual = meshPos + R*geomCenter
-  // where R is 180° X rotation, matching Fodder_Top's visual at [600,500,1134].
-  'Fodder_Forside':    [0, 32, 1032],         // wall [0,-32,32]     → meshPos [0,0,1064]
-  'Fodder_Bagside':    [0, 968, 2032],        // wall [0,1032,-968]  → meshPos [0,2000,1064]
-  'Fodder_venstre':    [1132, 1005, 1032],    // wall [-32,0,32]     → meshPos [1100,1005,1064]
-  'Fodder_H\u00f8jre': [-2332, 1005, 2232],  // wall [1232,0,-1168] → meshPos [-1100,1005,1064]
-  'Fodder_H\\xf8jre':  [-2332, 1005, 2232],  // byte-escaped variant
+/**
+ * Foot detach paths: each foot travels lid → clearance → wall via 3-phase arc
+ * to avoid clipping through the box.
+ *
+ * lidOffset:       offset from wall position to lid-top position (foldAmount=1)
+ * clearanceOffset: intermediate waypoint above & outside the box wall edge
+ *                  Z must be > 1000 (box wall height) to clear the top edge
+ *
+ * Phases (as foldAmount goes 1→0, i.e. lid→wall):
+ *   Phase 1 (1→0.67):  lid → clearance  (rise up & outward)
+ *   Phase 2 (0.67→0.33): clearance → near wall (sweep down along outside)
+ *   Phase 3 (0.33→0):  settle onto wall face
+ */
+const LID_DETACH_DATA = {
+  'Fodder_Forside': {
+    lidOffset:       [0, 32, 1032],
+    clearanceOffset: [0, -100, 1150],      // above & in front of front wall
+  },
+  'Fodder_Bagside': {
+    lidOffset:       [0, 968, 2032],
+    clearanceOffset: [0, 1100, 1150],      // above & behind back wall
+  },
+  'Fodder_venstre': {
+    lidOffset:       [1132, 1005, 1032],
+    clearanceOffset: [-100, 500, 1150],    // above & left of left wall
+  },
+  'Fodder_H\u00f8jre': {
+    lidOffset:       [-2332, 1005, 2232],
+    clearanceOffset: [1300, 500, 1150],    // above & right of right wall
+  },
+  'Fodder_H\\xf8jre': {
+    lidOffset:       [-2332, 1005, 2232],
+    clearanceOffset: [1300, 500, 1150],
+  },
 };
 
 // Quaternion matching Fodder_Top at t=0 (180° around X = lid closed, lying flat)
@@ -336,14 +360,15 @@ export function createFoldAnimation(model, sequence) {
     // Must be processed AFTER the panel fold step in array order.
     if (step.action === 'detach_from_lid') {
       for (const { name: meshName } of allMeshes) {
-        const offset = LID_DETACH_OFFSETS[meshName];
-        if (offset) {
+        const data = LID_DETACH_DATA[meshName];
+        if (data) {
           meshFolds.set(meshName, {
             pivot: new THREE.Vector3(),
             axis: new THREE.Vector3(),
             angle: 0,
             isDetachFromLid: true,
-            lidOffset: new THREE.Vector3(...offset),
+            lidOffset: new THREE.Vector3(...data.lidOffset),
+            clearanceOffset: new THREE.Vector3(...data.clearanceOffset),
             lidQuat: LID_QUAT,
           });
         }
@@ -502,10 +527,38 @@ export function createFoldAnimation(model, sequence) {
           const fold = step.meshFolds.get(name);
           if (!fold) continue;
 
-          // Feet detach from lid: translate wall→lid + slerp to flat orientation.
-          // Runs AFTER panel fold in array order, so we can override orientation.
+          // Feet detach from lid: 3-phase arc to avoid clipping through box.
+          // foldAmount goes 1→0 as foot moves from lid to wall.
+          // Phase 1 (1→0.67): lid → clearance (rise up & outward)
+          // Phase 2 (0.67→0.33): clearance → near wall (sweep outside wall)
+          // Phase 3 (0.33→0): settle onto wall face
           if (fold.isDetachFromLid) {
-            _translation.copy(fold.lidOffset).multiplyScalar(foldAmount);
+            const lid = fold.lidOffset;
+            const clr = fold.clearanceOffset;
+
+            if (foldAmount > 0.67) {
+              // Phase 1: interpolate lid → clearance
+              const p = (1 - foldAmount) / 0.33; // 0→1
+              _translation.set(
+                lid.x + (clr.x - lid.x) * p,
+                lid.y + (clr.y - lid.y) * p,
+                lid.z + (clr.z - lid.z) * p,
+              );
+            } else if (foldAmount > 0.33) {
+              // Phase 2: interpolate clearance → zero (wall position)
+              const p = (0.67 - foldAmount) / 0.34; // 0→1
+              _translation.set(
+                clr.x * (1 - p),
+                clr.y * (1 - p),
+                clr.z * (1 - p),
+              );
+            } else {
+              // Phase 3: ease remaining offset to zero
+              const p = foldAmount / 0.33; // 1→0
+              _translation.set(0, 0, 0);
+              // Already at wall position, no offset needed
+            }
+
             mesh.position.add(_translation);
             if (foldAmount > 0) {
               mesh.quaternion.slerp(fold.lidQuat, foldAmount);
