@@ -1,40 +1,22 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { createFoldAnimation } from './animation.js';
 import { applyMaterials } from './materials.js';
+import { setupStudio } from './lighting.js';
 
-// --- Scene setup (product reveal aesthetic) ---
+// --- Scene setup ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a12);
-scene.fog = new THREE.FogExp2(0x0a0a12, 0.00012);
 
-const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 1, 50000);
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 10, 60000);
 camera.position.set(2000, 1500, 2000);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
-// --- Post-processing (subtle bloom for cinematic glow) ---
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.15,   // strength — subtle
-  0.4,    // radius
-  0.85    // threshold — only bright highlights bloom
-);
-composer.addPass(bloomPass);
+const studio = setupStudio(scene, renderer);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -44,114 +26,6 @@ controls.autoRotate = false;
 controls.autoRotateSpeed = 0.5;
 controls.update();
 
-// --- Dramatic product-reveal lighting ---
-// Very low ambient — drama comes from directional lights
-scene.add(new THREE.AmbientLight(0x222233, 0.25));
-
-// Hero key light — warm, coming from upper-right front
-const mainLight = new THREE.DirectionalLight(0xfff0dd, 2.5);
-mainLight.position.set(1500, 2500, 2000);
-mainLight.castShadow = true;
-mainLight.shadow.mapSize.width = 4096;
-mainLight.shadow.mapSize.height = 4096;
-mainLight.shadow.camera.left = -3000;
-mainLight.shadow.camera.right = 3000;
-mainLight.shadow.camera.top = 3000;
-mainLight.shadow.camera.bottom = -3000;
-mainLight.shadow.camera.near = 100;
-mainLight.shadow.camera.far = 8000;
-mainLight.shadow.bias = -0.0005;
-mainLight.shadow.normalBias = 0.02;
-scene.add(mainLight);
-
-// Cool fill from the left — creates color contrast
-const fillLight = new THREE.DirectionalLight(0x8899cc, 0.4);
-fillLight.position.set(-2000, 800, -500);
-scene.add(fillLight);
-
-// Rim/backlight — edge highlighting for product silhouette
-const rimLight = new THREE.DirectionalLight(0xaabbff, 0.8);
-rimLight.position.set(-500, 200, -2500);
-scene.add(rimLight);
-
-// Subtle top light
-const topLight = new THREE.DirectionalLight(0xffffff, 0.15);
-topLight.position.set(0, 5000, 0);
-scene.add(topLight);
-
-// Hemisphere for subtle color gradient (sky to ground)
-const hemiLight = new THREE.HemisphereLight(0x1a1a2e, 0x0a0a0a, 0.3);
-scene.add(hemiLight);
-
-// Spotlight — dramatic focused light on the product
-const spotLight = new THREE.SpotLight(0xffffff, 1.5, 6000, Math.PI / 6, 0.5, 1);
-spotLight.position.set(600, 3000, 600);
-spotLight.target.position.set(600, 0, -400);
-spotLight.castShadow = true;
-spotLight.shadow.mapSize.width = 2048;
-spotLight.shadow.mapSize.height = 2048;
-scene.add(spotLight);
-scene.add(spotLight.target);
-
-// Environment map — darker, more dramatic
-const pmremGenerator = new THREE.PMREMGenerator(renderer);
-const envScene = new THREE.Scene();
-envScene.background = new THREE.Color(0x111122);
-const envLight1 = new THREE.DirectionalLight(0xffffff, 1.5);
-envLight1.position.set(1, 1, 1);
-envScene.add(envLight1);
-const envLight2 = new THREE.DirectionalLight(0x334466, 0.8);
-envLight2.position.set(-1, 0.5, -1);
-envScene.add(envLight2);
-const envLight3 = new THREE.DirectionalLight(0x222244, 0.5);
-envLight3.position.set(0, -1, 0);
-envScene.add(envLight3);
-const envTexture = pmremGenerator.fromScene(envScene).texture;
-scene.environment = envTexture;
-pmremGenerator.dispose();
-
-// --- Reflective showroom floor ---
-const floorGeo = new THREE.PlaneGeometry(8000, 8000);
-const floorMat = new THREE.MeshPhysicalMaterial({
-  color: 0x111115,
-  roughness: 0.15,
-  metalness: 0.8,
-  clearcoat: 0.3,
-  clearcoatRoughness: 0.1,
-  envMapIntensity: 0.6,
-});
-const floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI / 2;
-floor.position.y = -151;
-floor.receiveShadow = true;
-scene.add(floor);
-
-// Subtle radial gradient on floor (spotlight pool)
-const gradientGeo = new THREE.PlaneGeometry(4000, 4000);
-const gradientCanvas = document.createElement('canvas');
-gradientCanvas.width = 512;
-gradientCanvas.height = 512;
-const gCtx = gradientCanvas.getContext('2d');
-const grad = gCtx.createRadialGradient(256, 256, 0, 256, 256, 256);
-grad.addColorStop(0, 'rgba(60, 65, 80, 0.3)');
-grad.addColorStop(0.5, 'rgba(30, 30, 40, 0.1)');
-grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-gCtx.fillStyle = grad;
-gCtx.fillRect(0, 0, 512, 512);
-const gradientTex = new THREE.CanvasTexture(gradientCanvas);
-const gradientMat = new THREE.MeshBasicMaterial({
-  map: gradientTex,
-  transparent: true,
-  depthWrite: false,
-  blending: THREE.AdditiveBlending,
-});
-const gradientMesh = new THREE.Mesh(gradientGeo, gradientMat);
-gradientMesh.rotation.x = -Math.PI / 2;
-gradientMesh.position.y = -149;
-scene.add(gradientMesh);
-
-// No walls — infinite dark void
-// No grid — clean showroom look
 
 // --- State ---
 const progressFill = document.getElementById('progress-fill');
@@ -356,9 +230,6 @@ async function loadModel() {
     }
 
     frameObject(gltf.scene);
-    gltf.scene.traverse((node) => {
-      if (node.isMesh && node.material) cachedMeshes.push(node);
-    });
 
     // Add AirVR logo to front panel and TV screen
     addLogos(gltf.scene);
@@ -435,61 +306,22 @@ btnLighting.addEventListener('click', () => {
   btnLighting.classList.toggle('active');
 });
 
-// Base values for each light (the defaults from scene setup)
-const lightDefaults = {
-  exposure: 1.0,
-  key: 2.5,
-  fill: 0.4,
-  ambient: 0.25,
-  env: 1.0,
-};
-
-function setupSlider(id, baseVal, onChange) {
+// Each slider is a multiplier on the studio defaults (100 = 1.0x).
+const lightLevels = { exposure: 1, contrast: 1, key: 1, fill: 1, ambient: 1, env: 1 };
+for (const id of Object.keys(lightLevels)) {
   const slider = document.getElementById(`sl-${id}`);
   const valEl = document.getElementById(`val-${id}`);
+  if (!slider || !valEl) continue;
+  slider.value = '100';
+  valEl.textContent = '1.0x';
   slider.addEventListener('input', () => {
-    const pct = parseFloat(slider.value) / 100;
-    const val = baseVal * pct;
-    valEl.textContent = val.toFixed(1);
-    onChange(val, pct);
+    const level = Number(slider.value) / 100;
+    if (!Number.isFinite(level)) return;
+    lightLevels[id] = level;
+    valEl.textContent = `${level.toFixed(1)}x`;
+    studio.apply(lightLevels);
   });
 }
-
-setupSlider('exposure', lightDefaults.exposure, (val) => {
-  renderer.toneMappingExposure = val;
-});
-
-// Model meshes for the material sliders (filled once the model has loaded)
-const cachedMeshes = [];
-
-setupSlider('contrast', 1.0, (val) => {
-  for (const mesh of cachedMeshes) {
-    mesh.material.envMapIntensity = val;
-  }
-});
-
-setupSlider('key', lightDefaults.key, (val) => {
-  mainLight.intensity = val;
-});
-
-setupSlider('fill', lightDefaults.fill, (val) => {
-  fillLight.intensity = val;
-});
-
-setupSlider('ambient', lightDefaults.ambient, (val) => {
-  scene.children.forEach((child) => {
-    if (child.isAmbientLight) child.intensity = val;
-  });
-  hemiLight.intensity = val * 1.25;
-});
-
-setupSlider('env', lightDefaults.env, (val) => {
-  for (const mesh of cachedMeshes) {
-    if (mesh.material.envMapIntensity !== undefined) {
-      mesh.material.envMapIntensity = val;
-    }
-  }
-});
 
 let isScrubbing = false;
 scrubber.addEventListener('input', () => {
@@ -558,7 +390,6 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 // --- Animation loop ---
@@ -593,8 +424,7 @@ function animate() {
 
   performRaycast();
   controls.update();
-  // Use post-processing composer instead of direct render
-  composer.render();
+  renderer.render(scene, camera);
 }
 
 // Stop auto-rotate when user interacts (registered ONCE, outside the loop)

@@ -109,6 +109,26 @@ try {
       const b = cadBox(g);
       if (b.min[2] < 1054 - TOLERANCE_MM) fail(`foot not on the lid stack at t=0: ${g.name} z=${Math.round(b.min[2])}`);
     }
+    // Feet are three separate skids each (8 vertices per box): no two skids may
+    // intersect while packed on the lid.
+    const skids = [];
+    for (const m of meshes.filter((x) => x.name.startsWith('Fodder'))) {
+      const pos = m.geometry.attributes.position;
+      for (let s = 0; s + 8 <= pos.count; s += 8) {
+        const b = { name: `${m.name}#${s / 8}`, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+        for (let i = s; i < s + 8; i++) {
+          const p = toCad(new Vec3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+          for (let a = 0; a < 3; a++) { b.min[a] = Math.min(b.min[a], p[a]); b.max[a] = Math.max(b.max[a], p[a]); }
+        }
+        skids.push(b);
+      }
+    }
+    for (let i = 0; i < skids.length; i++) for (let j = i + 1; j < skids.length; j++) {
+      const p = skids[i], q = skids[j];
+      if (p.name.split('#')[0] === q.name.split('#')[0]) continue;
+      const ov = [0, 1, 2].map((a) => Math.min(p.max[a], q.max[a]) - Math.max(p.min[a], q.min[a]));
+      if (ov.every((d) => d > 1)) fail(`feet skids intersect at t=0: ${p.name} [${p.min.map(Math.round)}..${p.max.map(Math.round)}] x ${q.name} [${q.min.map(Math.round)}..${q.max.map(Math.round)}]`);
+    }
     // Informational: bounding-box overlaps between packed groups (boxes overestimate).
     const overlaps = [];
     const names = [...boxes.keys()];

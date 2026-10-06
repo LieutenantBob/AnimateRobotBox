@@ -93,18 +93,41 @@ export function hingeForPoint(x, y) {
  * Feet start stacked on the closed lid (Fodder_Top at the bottom) and are
  * moved one by one, top of the stack first, onto the outside of their wall.
  */
-export const FEET_STACK = Object.freeze({
-  centerXY: [600, 500],
-  baseZ: 1134,   // centre of Fodder_Top lying on the closed lid
-  pitch: 160,    // height of one foot frame
-  flip: [['x', 180]],
-});
+/*
+ * Each foot is three loose skids (50 x 160 x 900 mm). Fodder_Top's skids lie
+ * along Y at x = 20, 575, 1130 on the closed lid. The two side feet are
+ * narrower (skids 380 mm apart), so turned 90° they slot in between those
+ * skids in the same 160 mm layer:
+ *
+ *   x:  20  100  270  480  575  650  860  1030  1130
+ *       Top  L    R    L   Top   R    L    R    Top
+ *
+ * Front and back feet are as wide as the lid, so they lie on top as layers
+ * two and three. Stack height: 3 x 160 = 480 mm.
+ */
+const LID_LAYER_Z = 1135; // centre of a skid layer lying on the closed lid (lid top is z=1055)
+const SKID_HEIGHT = 160;
+const FLAT = [['x', 180]];
+const FLAT_TURNED = [['z', 90], ['x', 180]];
 
+/** Removed top layer first; side feet lift straight up out of the lid layer. */
 export const FEET = [
-  { name: 'foot_right', members: ['Fodder_Højre'], hinge: 'right', level: 4, outward: [1, 0, 0], window: [0.0, 0.4] },
-  { name: 'foot_left', members: ['Fodder_venstre'], hinge: 'left', level: 3, outward: [-1, 0, 0], window: [0.2, 0.6] },
-  { name: 'foot_back', members: ['Fodder_Bagside'], hinge: 'back', level: 2, outward: [0, 1, 0], window: [0.4, 0.8] },
-  { name: 'foot_front', members: ['Fodder_Forside'], hinge: 'front', level: 1, outward: [0, -1, 0], window: [0.6, 1.0] },
+  {
+    name: 'foot_back', members: ['Fodder_Bagside'], hinge: 'back', outward: [0, 1, 0], window: [0.0, 0.35],
+    stack: { center: [600, 500, LID_LAYER_Z + 2 * SKID_HEIGHT], rot: FLAT },
+  },
+  {
+    name: 'foot_front', members: ['Fodder_Forside'], hinge: 'front', outward: [0, -1, 0], window: [0.2, 0.55],
+    stack: { center: [600, 500, LID_LAYER_Z + SKID_HEIGHT], rot: FLAT },
+  },
+  {
+    name: 'foot_left', members: ['Fodder_venstre'], hinge: 'left', outward: [-1, 0, 0], window: [0.45, 0.8],
+    stack: { center: [505, 500, LID_LAYER_Z], rot: FLAT_TURNED },
+  },
+  {
+    name: 'foot_right', members: ['Fodder_Højre'], hinge: 'right', outward: [1, 0, 0], window: [0.65, 1.0],
+    stack: { center: [675, 500, LID_LAYER_Z], rot: FLAT_TURNED },
+  },
 ];
 
 /**

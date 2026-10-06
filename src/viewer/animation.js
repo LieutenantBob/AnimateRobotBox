@@ -19,7 +19,7 @@ import {
   buildRig, applyHingeAngle, applyPose, hingeMatrix, quatFromRotations,
 } from './fold/rig.js';
 import {
-  EQUIPMENT, FEET, FEET_STACK, HINGES, STIFFENERS, STIFFENER_TRAVEL_Z, hingeForPoint,
+  EQUIPMENT, FEET, HINGES, STIFFENERS, STIFFENER_TRAVEL_Z, hingeForPoint,
 } from './fold/layout.js';
 
 const v3 = (a) => new THREE.Vector3(...a);
@@ -62,14 +62,11 @@ function buildHingeTracks(rig, timer) {
   }));
 }
 
-/** Feet: stacked on the closed lid, then carried round onto their wall. */
+/** Feet: packed on the closed lid, then carried round onto their wall. */
 function buildFootTrack(asm, timer) {
   const spec = asm.spec;
-  const level = spec.level;
-  const flip = quatFromRotations(FEET_STACK.flip);
-  const stackCenter = new THREE.Vector3(
-    FEET_STACK.centerXY[0], FEET_STACK.centerXY[1], FEET_STACK.baseZ + level * FEET_STACK.pitch,
-  );
+  const flip = quatFromRotations(spec.stack.rot);
+  const stackCenter = v3(spec.stack.center);
 
   // Track values live in the hinge's frame; the hinge is closed while the
   // feet move, so convert world-space waypoints through its closed matrix.
