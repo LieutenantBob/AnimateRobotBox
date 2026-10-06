@@ -86,7 +86,67 @@ def load_obj_groups(filepath: str) -> dict:
     return meshes
 
 
+SHAPE_SAMPLES = 1500
+SHAPE_TOLERANCE_MM = 2.0          # absolute floor for allowed deviation
+SHAPE_TOLERANCE_REL = 0.01        # ...or 1% of the part's bounding-box diagonal
+SHAPE_RETRIES = 3                 # each retry halves the requested reduction
+
+
+def shape_error(original, decimated, samples: int = SHAPE_SAMPLES) -> float:
+    """Two-sided surface deviation (mm) between a mesh and its decimation.
+
+    Catches both failure modes seen in practice: spikes (decimated surface far
+    from the original) and collapsed/cut features (original surface no longer
+    covered, e.g. the handle rails that vanished from Handle_Right).
+    """
+    import trimesh
+    from scipy.spatial import cKDTree
+
+    def one_way(src, dst) -> float:
+        if src.area <= 0 or dst.area <= 0:
+            return 0.0
+        probe, _ = trimesh.sample.sample_surface(src, samples, seed=1)
+        # Dense point cloud standing in for dst's surface; subtract its spacing
+        # so sampling noise is not reported as deviation.
+        dense_n = samples * 20
+        cloud, _ = trimesh.sample.sample_surface(dst, dense_n, seed=2)
+        cloud = np.vstack([cloud, dst.vertices])
+        spacing = float(np.sqrt(dst.area / dense_n))
+        dist, _ = cKDTree(cloud).query(probe)
+        return max(0.0, float(np.max(dist)) - spacing)
+
+    return max(one_way(decimated, original), one_way(original, decimated))
+
+
+def shape_tolerance(mesh) -> float:
+    diagonal = float(np.linalg.norm(mesh.bounds[1] - mesh.bounds[0]))
+    return max(SHAPE_TOLERANCE_MM, SHAPE_TOLERANCE_REL * diagonal)
+
+
 def decimate_mesh(mesh, target_faces: int, name: str = ""):
+    """Decimate to roughly target_faces, refusing results that change the shape.
+
+    If the decimated surface deviates more than shape_tolerance() from the
+    original, retry with half the reduction; after SHAPE_RETRIES failures the
+    original mesh is kept.
+    """
+    tolerance = shape_tolerance(mesh)
+    faces = len(mesh.faces)
+    for attempt in range(SHAPE_RETRIES + 1):
+        candidate = _decimate_once(mesh, target_faces, name)
+        if candidate is mesh:
+            return mesh
+        error = shape_error(mesh, candidate)
+        if error <= tolerance:
+            return candidate
+        log.warning("    %s: decimation to %s faces deviates %.1f mm (limit %.1f), %s",
+                    name, f"{len(candidate.faces):,}", error, tolerance,
+                    "retrying with less reduction" if attempt < SHAPE_RETRIES else "keeping original")
+        target_faces = (target_faces + faces) // 2
+    return mesh
+
+
+def _decimate_once(mesh, target_faces: int, name: str = ""):
     """Decimate a single mesh to target face count."""
     import trimesh
 
