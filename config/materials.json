@@ -18,7 +18,7 @@
     "panel_light": {
       "baseColor": [0.780, 0.790, 0.830],
       "metallic": 0.05,
-      "roughness": 0.4,
+      "roughness": 0.32,
       "applies_to": ["Forside2", "Bag2", "Left2", "Right2", "Top2", "Sider", "Top"],
       "notes": "Box panels - medium blue-gray painted metal"
     },

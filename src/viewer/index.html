@@ -5,74 +5,81 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Robot-in-a-Box — 3D Viewer</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { overflow: hidden; background: #0a0a12; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    body { overflow: hidden; background: #030304; color: #e9eaec; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     canvas { display: block; }
 
     #loading {
       position: fixed; inset: 0;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      background: #0a0a12; color: #e0e0e0; z-index: 100;
+      background: #030304; color: #e9eaec; z-index: 100;
     }
     #loading.hidden { display: none; }
-    #loading h1 { font-size: 1.5rem; margin-bottom: 1rem; font-weight: 400; }
-    #progress-bar {
-      width: 300px; height: 4px; background: #333;
-      border-radius: 2px; overflow: hidden;
+    #loading h1 {
+      font-size: 0.95rem; margin-bottom: 1.4rem; font-weight: 300;
+      letter-spacing: 0.5em; text-transform: uppercase; color: rgba(255, 255, 255, 0.85);
     }
-    #progress-fill {
-      height: 100%; width: 0%; background: #4a9eff;
-      transition: width 0.3s ease;
-    }
-    #progress-text { margin-top: 0.5rem; font-size: 0.85rem; color: #888; }
+    #progress-bar { width: 260px; height: 1px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+    #progress-fill { height: 100%; width: 0%; background: #fff; transition: width 0.3s ease; }
+    #progress-text { margin-top: 0.9rem; font-size: 0.7rem; letter-spacing: 0.2em; color: rgba(255, 255, 255, 0.4); }
 
     #controls {
-      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-      display: flex; align-items: center; gap: 12px;
-      background: rgba(20, 20, 40, 0.9); padding: 12px 20px;
-      border-radius: 12px; backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      z-index: 10;
+      position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(12, 13, 15, 0.55); padding: 10px 16px;
+      border-radius: 999px; backdrop-filter: blur(14px) saturate(120%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 10; max-width: calc(100vw - 32px);
     }
     #controls.hidden { display: none; }
 
     .ctrl-btn {
-      background: rgba(74, 158, 255, 0.15); border: 1px solid rgba(74, 158, 255, 0.3);
-      color: #4a9eff; padding: 8px 16px; border-radius: 8px;
-      cursor: pointer; font-size: 0.85rem; transition: all 0.2s;
+      background: transparent; border: 1px solid rgba(255, 255, 255, 0.16);
+      color: rgba(255, 255, 255, 0.85); padding: 7px 14px; border-radius: 999px;
+      cursor: pointer; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase;
+      font-family: inherit; transition: all 0.25s ease;
     }
-    .ctrl-btn:hover { background: rgba(74, 158, 255, 0.3); }
-    .ctrl-btn.active { background: rgba(74, 158, 255, 0.4); border-color: #4a9eff; }
+    .ctrl-btn:hover { border-color: rgba(255, 255, 255, 0.5); color: #fff; }
+    .ctrl-btn.active { border-color: #fff; background: rgba(255, 255, 255, 0.1); color: #fff; }
 
-    #scrubber {
-      width: 200px; accent-color: #4a9eff;
+    #scrubber { width: 220px; accent-color: #e9eaec; }
+
+    @media (max-width: 700px) {
+      #controls {
+        flex-wrap: wrap; justify-content: center; gap: 8px;
+        border-radius: 18px; padding: 10px 12px; bottom: 16px; width: calc(100vw - 32px);
+      }
+      #scrubber { order: -1; width: 100%; }
+      .ctrl-btn { padding: 6px 11px; font-size: 0.66rem; }
+      #step-label { top: 26px !important; bottom: auto !important; white-space: nowrap; }
+      #info { display: none; }
     }
-    #time-label { color: #888; font-size: 0.8rem; min-width: 40px; }
+    #time-label { color: rgba(255, 255, 255, 0.45); font-size: 0.7rem; min-width: 40px; font-variant-numeric: tabular-nums; }
 
     #info {
-      position: fixed; top: 20px; left: 20px;
-      color: #888; font-size: 0.8rem; z-index: 10;
+      position: fixed; top: 22px; left: 24px;
+      color: rgba(255, 255, 255, 0.28); font-size: 0.65rem; letter-spacing: 0.12em; z-index: 10;
     }
     #part-label {
-      position: fixed; top: 20px; right: 20px;
-      color: #4a9eff; font-size: 0.9rem; z-index: 10;
-      background: rgba(20, 20, 40, 0.8); padding: 6px 12px;
-      border-radius: 6px; display: none;
+      position: fixed; top: 20px; right: 24px;
+      color: rgba(255, 255, 255, 0.8); font-size: 0.72rem; letter-spacing: 0.1em; z-index: 10;
+      background: rgba(12, 13, 15, 0.55); padding: 6px 12px; border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 999px; display: none; backdrop-filter: blur(10px);
     }
 
     #lighting-panel {
       position: fixed; top: 20px; right: 20px;
-      background: rgba(20, 20, 40, 0.92); padding: 14px 18px;
-      border-radius: 10px; backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      z-index: 20; min-width: 200px; display: none;
+      background: rgba(12, 13, 15, 0.7); padding: 16px 18px;
+      border-radius: 14px; backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 20; min-width: 220px; display: none;
     }
     #lighting-panel.visible { display: block; }
     #lighting-panel h3 {
-      color: #4a9eff; font-size: 0.8rem; margin: 0 0 10px 0;
-      font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;
+      color: rgba(255, 255, 255, 0.85); font-size: 0.68rem; margin: 0 0 12px 0;
+      font-weight: 400; text-transform: uppercase; letter-spacing: 0.25em;
     }
     .slider-row {
       display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
@@ -81,7 +88,7 @@
       color: #aaa; font-size: 0.75rem; min-width: 64px;
     }
     .slider-row input[type="range"] {
-      flex: 1; accent-color: #4a9eff; height: 4px;
+      flex: 1; accent-color: #e9eaec; height: 4px;
     }
     .slider-row .val {
       color: #666; font-size: 0.7rem; min-width: 28px; text-align: right;
@@ -101,6 +108,7 @@
     <input type="range" id="scrubber" min="0" max="1000" value="0" step="1">
     <span id="time-label">0.0s</span>
     <button class="ctrl-btn" id="btn-speed" title="Change speed">1x</button>
+    <button class="ctrl-btn active" id="btn-camera" title="Cinematic camera (drag the view to take over)">Cinematic</button>
     <button class="ctrl-btn" id="btn-lighting" title="Lighting settings">&#9728;</button>
   </div>
 
@@ -145,22 +153,23 @@
 
   <!-- Product title overlay -->
   <div id="title-overlay" style="
-    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    z-index: 15; text-align: center; pointer-events: none;
-    opacity: 0; transition: opacity 1.5s ease;
+    position: fixed; left: 50%; bottom: 17%; transform: translateX(-50%);
+    z-index: 15; text-align: center; pointer-events: none; white-space: nowrap;
+    opacity: 0; transition: opacity 1.8s ease;
   ">
-    <div style="color: rgba(255,255,255,0.9); font-size: 2.2rem; font-weight: 300; letter-spacing: 4px; text-transform: uppercase;">
+    <div style="color: rgba(255,255,255,0.94); font-size: clamp(1.3rem, 3.2vw, 2.4rem); font-weight: 200; letter-spacing: 0.42em; text-transform: uppercase;">
       Robot-in-a-Box
     </div>
-    <div style="color: rgba(130,160,255,0.6); font-size: 0.85rem; font-weight: 400; letter-spacing: 2px; margin-top: 8px;">
+    <div style="width: 48px; height: 1px; background: rgba(255,255,255,0.35); margin: 14px auto;"></div>
+    <div style="color: rgba(255,255,255,0.5); font-size: 0.72rem; font-weight: 300; letter-spacing: 0.4em; text-transform: uppercase;">
       Autonomous Workstation
     </div>
   </div>
 
   <div id="step-label" style="
     position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
-    color: rgba(255,255,255,0.75); font-size: 0.85rem; font-weight: 300;
-    letter-spacing: 1.5px; text-transform: uppercase; z-index: 10;
+    color: rgba(255,255,255,0.6); font-size: 0.68rem; font-weight: 300;
+    letter-spacing: 0.35em; text-transform: uppercase; z-index: 10;
     background: none; padding: 8px 20px;
     display: none; text-align: center;
     transition: opacity 0.5s ease;

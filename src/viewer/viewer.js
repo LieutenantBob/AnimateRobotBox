@@ -4,11 +4,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createFoldAnimation } from './animation.js';
 import { applyMaterials } from './materials.js';
 import { setupStudio } from './lighting.js';
+import { createPostFX } from './postfx.js';
+import { createCinematicCamera } from './cinematic.js';
 
 // --- Scene setup ---
 const scene = new THREE.Scene();
 
-const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 10, 60000);
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 100, 80000);
 camera.position.set(2000, 1500, 2000);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -16,15 +18,56 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 document.body.appendChild(renderer.domElement);
 
-const studio = setupStudio(scene, renderer);
+const studio = setupStudio(scene, renderer, camera);
+const postfx = createPostFX(renderer, scene, camera);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-controls.target.set(600, 500, 0);
-controls.autoRotate = false;
-controls.autoRotateSpeed = 0.5;
+controls.maxPolarAngle = Math.PI * 0.495; // never below the showroom floor
+controls.target.set(600, 500, -400);
 controls.update();
+
+// --- Cinematic camera: follows the timeline until the user grabs the view ---
+const cine = createCinematicCamera();
+const baseFog = { near: scene.fog.near, far: scene.fog.far };
+const cineTarget = new THREE.Vector3();
+const REFERENCE_ASPECT = 16 / 9;
+let cinematic = true;
+const btnCamera = document.getElementById('btn-camera');
+
+function setCinematic(on) {
+  cinematic = on;
+  btnCamera?.classList.toggle('active', on);
+}
+
+function applyCinematicCamera(t) {
+  const fov = cine.sample(t, camera.position, cineTarget);
+  // Pull back on narrow screens so the shot keeps its horizontal framing.
+  const widen = Math.min(2.5, Math.max(1, REFERENCE_ASPECT / camera.aspect));
+  camera.position.sub(cineTarget).multiplyScalar(widen).add(cineTarget);
+  // Push the fog back by the same factor so the product never sinks into it.
+  scene.fog.near = baseFog.near * widen;
+  scene.fog.far = baseFog.far * widen;
+  if (camera.fov !== fov) {
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
+  camera.lookAt(cineTarget);
+  controls.target.copy(cineTarget);
+}
+
+controls.addEventListener('start', () => setCinematic(false));
+btnCamera?.addEventListener('click', () => setCinematic(!cinematic));
+setCinematic(true);
+
+// --- Lights-up intro: the showroom fades in from black ---
+const INTRO_SECONDS = 2.6;
+let introStart = null;
+function startIntro() {
+  introStart = performance.now();
+  studio.setFade(0);
+}
 
 
 // --- State ---
@@ -66,19 +109,6 @@ function decodeNodeNames(root) {
   root.traverse((node) => {
     node.name = node.name.replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
   });
-}
-
-/** 3/4 view that fits the object's current bounds (the closed box at t=0). */
-function frameObject(object) {
-  const box = new THREE.Box3().setFromObject(object);
-  const sphere = box.getBoundingSphere(new THREE.Sphere());
-  const fov = THREE.MathUtils.degToRad(camera.fov);
-  const fitFov = camera.aspect < 1 ? 2 * Math.atan(Math.tan(fov / 2) * camera.aspect) : fov;
-  const distance = (sphere.radius / Math.sin(fitFov / 2)) * 1.15;
-  const direction = new THREE.Vector3(1, 0.65, 1).normalize();
-  controls.target.copy(sphere.center);
-  camera.position.copy(sphere.center).addScaledVector(direction, distance);
-  controls.update();
 }
 
 // --- Add AirVR logos to front panel and TV screen ---
@@ -229,7 +259,7 @@ async function loadModel() {
       timeLabel.textContent = '0.0s';
     }
 
-    frameObject(gltf.scene);
+    startIntro();
 
     // Add AirVR logo to front panel and TV screen
     addLogos(gltf.scene);
@@ -280,12 +310,13 @@ btnReset.addEventListener('click', () => {
   if (!animator) return;
   currentTime = 0;
   isPlaying = false;
-  controls.autoRotate = false;
   btnPlay.innerHTML = '&#9654; Play';
   scrubber.value = 0;
   timeLabel.textContent = '0.0s';
   animator.update(0);
   updateStepLabel(0.5);
+  setCinematic(true);
+  startIntro();
   // Re-show title on reset
   const titleOverlay = document.getElementById('title-overlay');
   if (titleOverlay) {
@@ -330,7 +361,6 @@ scrubber.addEventListener('input', () => {
   currentTime = (parseFloat(scrubber.value) / 1000) * totalDuration;
   animator.update(currentTime);
   isPlaying = false;
-  controls.autoRotate = false;
   btnPlay.innerHTML = '&#9654; Play';
   timeLabel.textContent = `${currentTime.toFixed(1)}s`;
   updateStepLabel(currentTime);
@@ -390,6 +420,8 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  postfx.setSize(window.innerWidth, window.innerHeight);
+  studio.setSize(window.innerWidth, window.innerHeight);
 });
 
 // --- Animation loop ---
@@ -405,15 +437,8 @@ function animate() {
       currentTime = totalDuration;
       isPlaying = false;
       btnPlay.innerHTML = '&#9654; Play';
-      // Enable slow auto-rotate when animation finishes
-      controls.autoRotate = true;
-      controls.autoRotateSpeed = 0.8;
     }
     animator.update(currentTime);
-
-    // Slow auto-rotate during playback for cinematic feel
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.3;
 
     if (!isScrubbing) {
       scrubber.value = Math.round((currentTime / totalDuration) * 1000);
@@ -422,15 +447,17 @@ function animate() {
     }
   }
 
-  performRaycast();
-  controls.update();
-  renderer.render(scene, camera);
-}
+  if (introStart !== null) {
+    const k = Math.min(1, (performance.now() - introStart) / (INTRO_SECONDS * 1000));
+    studio.setFade(k * k * (3 - 2 * k));
+    if (k >= 1) introStart = null;
+  }
 
-// Stop auto-rotate when user interacts (registered ONCE, outside the loop)
-renderer.domElement.addEventListener('pointerdown', () => {
-  controls.autoRotate = false;
-});
+  performRaycast();
+  if (cinematic) applyCinematicCamera(currentTime);
+  else controls.update();
+  postfx.render(clock.elapsedTime);
+}
 
 // --- Start ---
 loadModel();

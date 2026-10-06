@@ -161,11 +161,12 @@ export function applyMaterials(model, materialsConfig) {
 
     // Material-specific enhancements
     if (name === 'panel_light') {
-      // Painted sheet metal — clearcoat + subtle surface texture
-      params.clearcoat = 0.3;
-      params.clearcoatRoughness = 0.4;
+      // Painted sheet metal with a glossy clear coat, like car paint: the
+      // showroom softboxes read as long clean highlights across the walls.
+      params.clearcoat = 1.0;
+      params.clearcoatRoughness = 0.05;
       params.normalMap = textures.noiseFine;
-      params.normalScale = new THREE.Vector2(0.15, 0.15);
+      params.normalScale = new THREE.Vector2(0.03, 0.03);
     } else if (name === 'robot_arm_blue') {
       // UR robot — smooth painted plastic with clearcoat
       params.clearcoat = 0.6;
