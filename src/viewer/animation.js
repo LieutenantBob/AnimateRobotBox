@@ -18,8 +18,9 @@ import {
 import {
   buildRig, applyHingeAngle, applyPose, hingeMatrix, quatFromRotations,
 } from './fold/rig.js';
+import { splitMeshIntoPieces } from './fold/split.js';
 import {
-  EQUIPMENT, FEET, HINGES, STIFFENERS, STIFFENER_TRAVEL_Z, hingeForPoint,
+  EQUIPMENT, FEET, HINGES, SPLIT_INTO_SKIDS, STIFFENERS, STIFFENER_TRAVEL_Z, hingeForPoint,
 } from './fold/layout.js';
 
 const v3 = (a) => new THREE.Vector3(...a);
@@ -89,7 +90,7 @@ function buildFootTrack(asm, timer) {
 
   return buildPoseTrack(
     makePose(stackCenter.applyMatrix4(toLocal), localQuat(flip)),
-    [{ ...timer('detach_feet', spec.window), to: makePose(asm.center), via, rotWindow: [0.15, 0.6] }],
+    [{ ...timer('detach_feet', spec.window), to: makePose(asm.center), via, rotWindow: spec.rotWindow ?? [0.15, 0.6] }],
     spec.name,
   );
 }
@@ -129,6 +130,14 @@ function buildEquipmentTrack(asm, timer) {
 
 export function createFoldAnimation(model, sequence) {
   const world = model.getObjectByName('world') ?? model;
+
+  // Feet are three loose skids each; split them so every skid moves on its own.
+  for (const name of SPLIT_INTO_SKIDS) {
+    const mesh = world.getObjectByName(name);
+    if (!mesh?.isMesh) throw new Error(`Fold rig: cannot split "${name}", mesh not found`);
+    const pieces = splitMeshIntoPieces(mesh);
+    if (pieces.length !== 3) throw new Error(`Fold rig: expected 3 skids in "${name}", found ${pieces.length}`);
+  }
   const timer = makeTimer(sequence);
 
   const stiffenerSpecs = STIFFENERS.map((s) => ({ ...s, members: [s.name], kind: 'stiffener' }));

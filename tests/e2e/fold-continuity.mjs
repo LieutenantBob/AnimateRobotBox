@@ -121,6 +121,10 @@ try {
           for (let a = 0; a < 3; a++) { b.min[a] = Math.min(b.min[a], p[a]); b.max[a] = Math.max(b.max[a], p[a]); }
         }
         skids.push(b);
+        // All feet start in a single 160 mm layer on the lid (z 1055..1215).
+        if (b.min[2] < 1055 - TOLERANCE_MM || b.max[2] > 1215 + TOLERANCE_MM) {
+          fail(`feet skid not in the single lid layer at t=0: ${b.name} z ${Math.round(b.min[2])}..${Math.round(b.max[2])}`);
+        }
       }
     }
     for (let i = 0; i < skids.length; i++) for (let j = i + 1; j < skids.length; j++) {

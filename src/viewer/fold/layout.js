@@ -89,46 +89,58 @@ export function hingeForPoint(x, y) {
   return null;
 }
 
-/**
- * Feet start stacked on the closed lid (Fodder_Top at the bottom) and are
- * moved one by one, top of the stack first, onto the outside of their wall.
- */
 /*
- * Each foot is three loose skids (50 x 160 x 900 mm). Fodder_Top's skids lie
- * along Y at x = 20, 575, 1130 on the closed lid. The two side feet are
- * narrower (skids 380 mm apart), so turned 90° they slot in between those
- * skids in the same 160 mm layer:
+ * Feet. Each foot is three loose skids (50 x 160 x 900 mm). All five feet
+ * start in ONE layer on the closed lid, every skid standing on edge along Y:
  *
- *   x:  20  100  270  480  575  650  860  1030  1130
- *       Top  L    R    L   Top   R    L    R    Top
+ *   - Fodder_Top's skids are already in place at x = 20, 575, 1130 (it rides
+ *     the lid and is never split)
+ *   - the other 12 skids fill the two 505 mm gaps between them, six per gap,
+ *     ~29 mm apart; left/front skids in the left gap, back/right in the right
  *
- * Front and back feet are as wide as the lid, so they lie on top as layers
- * two and three. Stack height: 3 x 160 = 480 mm.
+ * Each skid then lifts straight up, turns upright once it is clear of the
+ * box, and is hung on the outside of its own wall, one foot after another.
  */
-const LID_LAYER_Z = 1135; // centre of a skid layer lying on the closed lid (lid top is z=1055)
-const SKID_HEIGHT = 160;
-const FLAT = [['x', 180]];
-const FLAT_TURNED = [['z', 90], ['x', 180]];
+export const LID_LAYER_Z = 1135; // centre of the skid layer (lid top is z=1055)
+export const SPLIT_INTO_SKIDS = ['Fodder_venstre', 'Fodder_Forside', 'Fodder_Bagside', 'Fodder_H\u00f8jre'];
 
-/** Removed top layer first; side feet lift straight up out of the lid layer. */
-export const FEET = [
-  {
-    name: 'foot_back', members: ['Fodder_Bagside'], hinge: 'back', outward: [0, 1, 0], window: [0.0, 0.35],
-    stack: { center: [600, 500, LID_LAYER_Z + 2 * SKID_HEIGHT], rot: FLAT },
-  },
-  {
-    name: 'foot_front', members: ['Fodder_Forside'], hinge: 'front', outward: [0, -1, 0], window: [0.2, 0.55],
-    stack: { center: [600, 500, LID_LAYER_Z + SKID_HEIGHT], rot: FLAT },
-  },
-  {
-    name: 'foot_left', members: ['Fodder_venstre'], hinge: 'left', outward: [-1, 0, 0], window: [0.45, 0.8],
-    stack: { center: [505, 500, LID_LAYER_Z], rot: FLAT_TURNED },
-  },
-  {
-    name: 'foot_right', members: ['Fodder_Højre'], hinge: 'right', outward: [1, 0, 0], window: [0.65, 1.0],
-    stack: { center: [675, 500, LID_LAYER_Z], rot: FLAT_TURNED },
-  },
+const SKID_WIDTH = 50;
+const GAPS = [[70, 575], [625, 1130]];          // free x-ranges between Fodder_Top's skids
+const slotsIn = ([a, b], n) => {
+  const space = (b - a - n * SKID_WIDTH) / (n + 1);
+  return Array.from({ length: n }, (_, i) => a + space * (i + 1) + SKID_WIDTH * (i + 0.5));
+};
+const SLOTS = [...slotsIn(GAPS[0], 6), ...slotsIn(GAPS[1], 6)].map((x) => Math.round(x * 10) / 10);
+
+const ALONG_Y = [['x', 180]];                   // front/back skids already run along Y
+const TURNED_ALONG_Y = [['z', 90], ['x', 180]]; // side-foot skids run along X unfolded
+
+/** Feet in removal order; `slots` index into SLOTS (left to right on the lid). */
+const FEET_SPEC = [
+  { foot: 'Fodder_H\u00f8jre', short: 'right', hinge: 'right', outward: [1, 0, 0], slots: [9, 10, 11], rot: TURNED_ALONG_Y },
+  { foot: 'Fodder_Bagside', short: 'back', hinge: 'back', outward: [0, 1, 0], slots: [6, 7, 8], rot: ALONG_Y },
+  { foot: 'Fodder_Forside', short: 'front', hinge: 'front', outward: [0, -1, 0], slots: [3, 4, 5], rot: ALONG_Y },
+  { foot: 'Fodder_venstre', short: 'left', hinge: 'left', outward: [-1, 0, 0], slots: [0, 1, 2], rot: TURNED_ALONG_Y },
 ];
+
+const SKID_MOVE = 1.3 / 4;                      // each skid's move, as a fraction of the 4 s step
+const SKID_COUNT = FEET_SPEC.length * 3;
+const SKID_STAGGER = (1 - SKID_MOVE) / (SKID_COUNT - 1);
+
+export const FEET = FEET_SPEC.flatMap((f, fi) => f.slots.map((slot, si) => {
+  const order = fi * 3 + si;
+  const start = order * SKID_STAGGER;
+  return {
+    name: `foot_${f.short}_${si + 1}`,
+    members: [`${f.foot}_skid${si + 1}`],
+    hinge: f.hinge,
+    outward: f.outward,
+    window: [start, Math.min(1, start + SKID_MOVE)],
+    rotWindow: [0.5, 0.9],                      // stay flat until clear of the other skids
+    stack: { center: [SLOTS[slot], 500, LID_LAYER_Z], rot: f.rot },
+  };
+}));
+
 
 /**
  * Stiffeners: packed as a rack under the lid, lifted out onto the floor
@@ -165,7 +177,7 @@ export const EQUIPMENT = [
   },
   {
     name: 'strut_right', members: ['Stang_Hojre', 'Handle_Right', ...range('SOLID', 22, 26)],
-    packed: { center: [600, 380, 740], rot: LYING_ALONG_X },
+    packed: { center: [600, 380, 728], rot: LYING_ALONG_X },
     step: 'deploy_struts', window: [0.1, 1], liftZ: 1600, arrive: [0, 0, 650], rotWindow: [0.15, 0.7],
   },
   {
