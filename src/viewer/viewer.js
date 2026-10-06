@@ -64,6 +64,26 @@ setCinematic(true);
 // --- Lights-up intro: the showroom fades in from black ---
 const INTRO_SECONDS = 2.6;
 let introStart = null;
+
+// Title card: shown with the lights-up intro and held for TITLE_SECONDS of
+// *rendered* time (each frame counts for at most 1/30 s), so a slow device
+// that stalls on its first frames still gets to see it.
+const TITLE_DELAY = 0.4;
+const TITLE_SECONDS = 4.6;
+const titleOverlay = document.getElementById('title-overlay');
+let titleClock = null;
+function showTitle() { titleClock = 0; }
+function hideTitle() {
+  titleClock = null;
+  if (titleOverlay) titleOverlay.style.opacity = '0';
+}
+function tickTitle(delta) {
+  if (titleClock === null || !titleOverlay) return;
+  titleClock += Math.min(delta, 1 / 30);
+  if (titleClock >= TITLE_DELAY + TITLE_SECONDS) hideTitle();
+  else if (titleClock >= TITLE_DELAY) titleOverlay.style.opacity = '1';
+}
+
 function startIntro() {
   introStart = performance.now();
   studio.setFade(0);
@@ -259,20 +279,25 @@ async function loadModel() {
       timeLabel.textContent = '0.0s';
     }
 
-    startIntro();
-
     // Add AirVR logo to front panel and TV screen
     addLogos(gltf.scene);
+
+    // Compile every shader while the loading screen is still up, so the
+    // lights-up intro and title don't play during a first-frame stall.
+    progressText.textContent = 'Preparing showroom...';
+    if (cinematic) applyCinematicCamera(currentTime);
+    try {
+      await renderer.compileAsync(scene, camera);
+    } catch (err) {
+      console.warn('Shader precompile failed, continuing:', err);
+    }
+    startIntro();
 
     loadingDiv.classList.add('hidden');
     controlsDiv.classList.remove('hidden');
 
     // Product reveal title fade-in, then auto-fade after 4s
-    const titleOverlay = document.getElementById('title-overlay');
-    if (titleOverlay) {
-      setTimeout(() => { titleOverlay.style.opacity = '1'; }, 500);
-      setTimeout(() => { titleOverlay.style.opacity = '0'; }, 4500);
-    }
+    showTitle();
 
     if (!animator) {
       progressText.textContent = '';
@@ -301,8 +326,7 @@ btnPlay.addEventListener('click', () => {
     isPlaying = true;
     btnPlay.innerHTML = '&#9646;&#9646; Pause';
     // Fade out title on play
-    const titleOverlay = document.getElementById('title-overlay');
-    if (titleOverlay) titleOverlay.style.opacity = '0';
+    hideTitle();
   }
 });
 
@@ -318,11 +342,7 @@ btnReset.addEventListener('click', () => {
   setCinematic(true);
   startIntro();
   // Re-show title on reset
-  const titleOverlay = document.getElementById('title-overlay');
-  if (titleOverlay) {
-    titleOverlay.style.opacity = '1';
-    setTimeout(() => { titleOverlay.style.opacity = '0'; }, 4000);
-  }
+  showTitle();
 });
 
 btnSpeed.addEventListener('click', () => {
@@ -447,6 +467,7 @@ function animate() {
     }
   }
 
+  tickTitle(delta);
   if (introStart !== null) {
     const k = Math.min(1, (performance.now() - introStart) / (INTRO_SECONDS * 1000));
     studio.setFade(k * k * (3 - 2 * k));
