@@ -1,121 +1,102 @@
 {
-  "description": "Robot-in-a-Box unfold animation sequence",
-  "total_duration_seconds": 29,
+  "description": "Robot-in-a-Box unfold animation sequence. Timing and labels only; positions and paths live in src/viewer/fold/layout.js",
+  "total_duration_seconds": 28,
   "style": "smooth_presentation",
   "user_scrubber": true,
   "sequence": [
     {
+      "step": 0,
+      "name": "Detach Feet from Lid",
+      "action": "detach_feet",
+      "parts": ["Fodder_Højre", "Fodder_venstre", "Fodder_Bagside", "Fodder_Forside"],
+      "start_time": 0.0,
+      "duration_seconds": 4.0,
+      "notes": "Feet start stacked on the closed lid; taken off top-first and hung on the outside of their wall"
+    },
+    {
       "step": 1,
       "name": "Open Lid",
-      "parts": ["Top2"],
-      "action": "rotate",
-      "hinge_edge": "front",
-      "angle_degrees": 180,
-      "direction": "forward_and_over",
+      "action": "open_lid",
+      "parts": ["Top2", "Fodder_Top"],
       "start_time": 5.0,
       "duration_seconds": 2.5,
-      "notes": "Lid hinges at front edge, swings open toward viewer"
+      "notes": "Lid hinges on the top edge of the front wall and swings 180 degrees out toward the viewer"
+    },
+    {
+      "step": 2,
+      "name": "Lift Stiffeners Out of Box",
+      "action": "lift_stiffeners",
+      "parts": ["Langsstiver_*", "Tvarstiver_*"],
+      "start_time": 8.0,
+      "duration_seconds": 2.0,
+      "notes": "Stiffener rack under the lid is lifted out onto the floor beside the box"
     },
     {
       "step": 3,
-      "name": "Lift Stiffeners Out of Box",
-      "parts": ["Langsstiver", "Tvarstiver"],
-      "action": "lift_from_box",
-      "start_time": 8.0,
-      "duration_seconds": 2.0,
-      "notes": "Stiffeners rise up out of box and land on the floor beside the box"
+      "name": "Fold Down All Side Panels",
+      "action": "fold_panels",
+      "parts": ["Forside2", "Bag2", "Left2", "Right2"],
+      "start_time": 11.5,
+      "duration_seconds": 3.0,
+      "notes": "All 4 walls fold down together, carrying their feet, clamps and mounted parts; the open lid stays level and lands beyond the front wall"
+    },
+    {
+      "step": 4,
+      "name": "Deploy Side Struts",
+      "action": "deploy_struts",
+      "parts": ["Stang_Venstre", "Stang_Hojre", "Handle_Left", "Handle_Right"],
+      "start_time": 14.5,
+      "duration_seconds": 1.5,
+      "notes": "Struts with their handles are lifted out of the box and stood up on the side panels"
     },
     {
       "step": 5,
-      "name": "Fold Down All Side Panels",
-      "parts": ["Forside2", "Bag2", "Left2", "Right2"],
-      "action": "rotate",
-      "hinge_edge": "bottom",
-      "angle_degrees": 180,
-      "direction": "outward_flat",
-      "start_time": 11.5,
-      "duration_seconds": 3.0,
-      "notes": "All 4 panels fold down simultaneously. Feet are attached and fold with panels."
-    },
-    {
-      "step": "0a",
-      "name": "Detach Feet from Lid",
-      "parts": ["Fodder_Forside", "Fodder_Bagside", "Fodder_venstre", "Fodder_H\u00f8jre", "Fodder_H\\xf8jre"],
-      "action": "detach_from_lid",
-      "start_time": 0.0,
-      "duration_seconds": 4.0,
-      "notes": "Feet slide from lid-top to box faces. Processed AFTER panel fold in array order."
+      "name": "Insert Stiffeners",
+      "action": "insert_stiffeners",
+      "parts": ["Langsstiver_*", "Tvarstiver_*"],
+      "start_time": 16.0,
+      "duration_seconds": 2.0,
+      "notes": "Stiffeners move from the floor into their slots across the fold lines"
     },
     {
       "step": 6,
-      "name": "Deploy Side Struts",
-      "parts": ["Stang_Venstre", "Stang_Hojre", "Stang_bund002", "Plade_Tv"],
-      "action": "deploy",
-      "start_time": 14.5,
-      "duration_seconds": 1.5,
-      "notes": "Struts extend to hold panels in open/flat position"
+      "name": "Set Up Shelf and TV",
+      "action": "place_shelf_tv",
+      "parts": ["Hylde", "TV", "Body", "SOLID012-016"],
+      "start_time": 18.0,
+      "duration_seconds": 2.0,
+      "notes": "Shelf stands up on the back panel; tripod and TV are placed behind it"
     },
     {
       "step": 7,
-      "name": "Insert Stiffeners",
-      "parts": ["Langsstiver", "Tvarstiver", "Pad063", "Pad064", "Pad065"],
-      "action": "slide_into_position",
-      "start_time": 16.0,
-      "duration_seconds": 2.0,
-      "notes": "Stiffeners move from floor positions into their slots on the panels"
+      "name": "Move PC to Final Position",
+      "action": "move_pc",
+      "parts": ["PC2"],
+      "start_time": 20.0,
+      "duration_seconds": 1.5,
+      "notes": "PC moves onto the right panel"
     },
     {
       "step": 8,
-      "name": "Flip Open Shelf with TV",
-      "parts": ["Hylde", "TV", "Body", "SOLID012", "SOLID013", "SOLID014", "SOLID015", "SOLID016"],
-      "action": "rotate",
-      "direction": "flip_upward",
-      "start_time": 18.0,
-      "duration_seconds": 2.0,
-      "notes": "Shelf flips upward carrying the TV"
+      "name": "Place Keyboard and Mouse",
+      "action": "place_keyboard",
+      "parts": ["keyboard", "1", "1005867"],
+      "start_time": 21.5,
+      "duration_seconds": 1.5,
+      "notes": "Keyboard and mouse slide onto the shelf"
     },
     {
       "step": 9,
-      "name": "Move PC to Final Position",
-      "parts": ["PC2"],
-      "action": "translate",
-      "direction": "right",
-      "start_time": 20.0,
-      "duration_seconds": 1.5,
-      "notes": "PC slides to final position on the right side"
-    },
-    {
-      "step": 10,
-      "name": "Place Keyboard and Mouse",
-      "parts": ["keyboard", "Mouse 2"],
-      "action": "translate",
-      "start_time": 21.5,
-      "duration_seconds": 1.5,
-      "notes": "Keyboard and mouse placed in working positions"
-    },
-    {
-      "step": 11,
       "name": "Robot Arm to Working Position",
-      "parts": ["C-2003903", "C-2003904", "C-2003907", "C-2003908", "C-2007307", "C-2007308", "C-2007309", "C-2007310", "C-2007311", "C-2007312", "C-2007588", "704-250-01_filled", "704-251-01_filled", "1005866"],
       "action": "robot_joints",
+      "parts": ["UR30"],
       "start_time": 23.5,
       "duration_seconds": 4.0,
-      "notes": "UR30 robot arm moves from parked to working position",
-      "joint_angles_parked": [0, 0, 0, 0, 0, 0],
-      "joint_angles_working": [-35, -20, -16, -35, 93, -2]
+      "notes": "UR30 base joint swings the arm from its packed pose to the working pose"
     }
   ],
-  "feet_panel_mapping": {
-    "Fodder_Forside": "Forside2",
-    "Fodder_Bagside": "Bag2",
-    "Fodder_venstre": "Left2",
-    "Fodder_H\u00f8jre": "Right2",
-    "Fodder_H\\xf8jre": "Right2",
-    "Fodder_Top": "Top2"
-  },
   "static_parts": {
-    "base_never_moves": ["Palle", "Jernplade", "Sandwich_plade"],
-    "skip_animation": ["Clamps", "Handles"]
+    "base_never_moves": ["Palle", "Jernplade", "Sandwich_plade", "Clamps_bund (SOLID027-066)"]
   },
   "colors": {
     "source": "step_file",

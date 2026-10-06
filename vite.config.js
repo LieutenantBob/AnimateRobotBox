@@ -41,7 +41,9 @@ function serveProjectRoot() {
         const src = path.join(projectRoot, dir);
         const dest = path.join(distDir, dir);
         if (fs.existsSync(src)) {
-          fs.cpSync(src, dest, { recursive: true });
+          // Debug screenshots are not part of the site
+          const skip = path.join(projectRoot, 'assets', 'screenshots');
+          fs.cpSync(src, dest, { recursive: true, filter: (p) => !p.startsWith(skip) });
         }
       }
     },

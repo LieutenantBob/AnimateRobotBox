@@ -183,6 +183,30 @@ const MODEL_PATH = '/assets/decimated/unfolded/robot_decimated.glb';
 const SEQUENCE_PATH = '/config/fold_sequence.json';
 const MATERIALS_PATH = '/config/materials.json';
 
+/**
+ * The CAD export stores non-ASCII characters as literal "\xNN" escapes
+ * (e.g. "Langsstiver_\xd8H"). Decode them once so every lookup can use
+ * real names ("Langsstiver_ØH").
+ */
+function decodeNodeNames(root) {
+  root.traverse((node) => {
+    node.name = node.name.replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  });
+}
+
+/** 3/4 view that fits the object's current bounds (the closed box at t=0). */
+function frameObject(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  const fov = THREE.MathUtils.degToRad(camera.fov);
+  const fitFov = camera.aspect < 1 ? 2 * Math.atan(Math.tan(fov / 2) * camera.aspect) : fov;
+  const distance = (sphere.radius / Math.sin(fitFov / 2)) * 1.15;
+  const direction = new THREE.Vector3(1, 0.65, 1).normalize();
+  controls.target.copy(sphere.center);
+  camera.position.copy(sphere.center).addScaledVector(direction, distance);
+  controls.update();
+}
+
 // --- Add AirVR logos to front panel and TV screen ---
 function addLogos(model) {
   const textureLoader = new THREE.TextureLoader();
@@ -307,31 +331,7 @@ async function loadModel() {
     gltf.scene.scale.set(1, 1, 1);
     scene.add(gltf.scene);
     modelRoot = gltf.scene;
-
-    // Camera targets the base plate area directly.
-    // Base plates (Palle, etc.) are at the origin in model space.
-    // After model root rotation (-PI/2 X): OBJ Z→world Y, OBJ Y→world -Z
-    // Box center in OBJ: [600, 500, 500] → world: [600, 500, -500]
-    // But we want to look slightly above center for a good 3/4 view
-    // Use Palle mesh position as ground truth for the box location
-    let targetPos;
-    const palle = gltf.scene.getObjectByName('Palle');
-    if (palle) {
-      const wp = new THREE.Vector3();
-      palle.getWorldPosition(wp);
-      // Palle is the floor of the box, target slightly above
-      targetPos = wp.clone().add(new THREE.Vector3(0, 400, 0));
-    } else {
-      const box = new THREE.Box3().setFromObject(gltf.scene);
-      targetPos = box.getCenter(new THREE.Vector3());
-    }
-    controls.target.copy(targetPos);
-    camera.position.set(
-      targetPos.x + 1400,
-      targetPos.y + 900,
-      targetPos.z + 1400
-    );
-    controls.update();
+    decodeNodeNames(gltf.scene);
 
     // Apply PBR materials and enable shadows
     if (materialsConfig) {
@@ -354,6 +354,11 @@ async function loadModel() {
       scrubber.value = 0;
       timeLabel.textContent = '0.0s';
     }
+
+    frameObject(gltf.scene);
+    gltf.scene.traverse((node) => {
+      if (node.isMesh && node.material) cachedMeshes.push(node);
+    });
 
     // Add AirVR logo to front panel and TV screen
     addLogos(gltf.scene);
@@ -454,11 +459,8 @@ setupSlider('exposure', lightDefaults.exposure, (val) => {
   renderer.toneMappingExposure = val;
 });
 
-// Cache mesh references for slider performance (avoid per-frame traversal)
+// Model meshes for the material sliders (filled once the model has loaded)
 const cachedMeshes = [];
-scene.traverse((node) => {
-  if (node.isMesh && node.material) cachedMeshes.push(node);
-});
 
 setupSlider('contrast', 1.0, (val) => {
   for (const mesh of cachedMeshes) {

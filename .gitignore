@@ -33,3 +33,10 @@ assets/output/
 
 # Parsed data (regenerate with pipeline)
 assets/*.json
+
+# Debug output (regenerate with scripts/screenshot*.mjs)
+screenshots/
+assets/screenshots/
+
+# Vite dependency cache
+.vite/
